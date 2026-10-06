@@ -24,9 +24,10 @@ holoscan list
 holoscan modes <application>
 ```
 
-Replace `<application>` with an application name from `holoscan list`, and
-`<mode>` in the examples below with a mode listed for that application. Follow
-the application's README to prepare its environment and data before building.
+Replace `<application>` with a name from `holoscan list`. `<mode>` is optional;
+omit it to use the application's default mode, or choose a mode listed by
+`holoscan modes <application>`. Follow the application's README to prepare its
+environment and data before building.
 
 ## Build and run
 
