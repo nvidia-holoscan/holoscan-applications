@@ -1,0 +1,110 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+exclude: '^(build[^/]*|install[^/]*|data|\.cache|\.venv)/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/cpplint/cpplint
+    rev: 2.0.2
+    hooks:
+      - id: cpplint
+        args: [--quiet]
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.48.0
+    hooks:
+      - id: markdownlint
+        args: [--fix, --config, .markdownlint.yaml, --ignore-path, .markdownlintignore]
+
+  - repo: local
+    hooks:
+      - id: spdx-license-identifier
+        name: require the Apache-2.0 SPDX identifier in source and build files
+        entry: python3 -c
+        args:
+          - |
+            import pathlib
+            import sys
+
+            marker = "SPDX-License-Identifier: Apache-2.0"
+            missing = []
+            for filename in sys.argv[1:]:
+                path = pathlib.Path(filename)
+                if marker not in path.read_text(encoding="utf-8", errors="replace"):
+                    missing.append(str(path))
+            if missing:
+                print("Missing Apache-2.0 SPDX identifier:\n" + "\n".join(missing), file=sys.stderr)
+            raise SystemExit(1 if missing else 0)
+        language: system
+        files: '(^|/)(CMakeLists\.txt|Dockerfile)$|\.(c|cc|cpp|cu|cuh|h|hpp|py)$|^\.github/workflows/.*\.ya?ml$'
+
+      - id: internal-artifact-check
+        name: reject internal staging references
+        entry: python3 -c
+        args:
+          - |
+            import pathlib
+            import sys
+
+            marker = "nv" + "staging"
+            matches = []
+            for filename in sys.argv[1:]:
+                path = pathlib.Path(filename)
+                if marker in path.read_text(encoding="utf-8", errors="replace").lower():
+                    matches.append(str(path))
+            if matches:
+                print("Internal staging reference found:\n" + "\n".join(matches), file=sys.stderr)
+            raise SystemExit(1 if matches else 0)
+        language: system
+        files: '\.(c|cc|cpp|cu|cuh|h|hpp|py|cmake|json|md|txt|ya?ml)$|(^|/)(CMakeLists\.txt|Dockerfile)$'
+
+      - id: holoscan-metadata-validate
+        name: validate metadata.json with the installed holoscan-cli schemas
+        entry: python3 -c
+        args:
+          - |
+            import json
+            import pathlib
+            import sys
+            from holoscan_cli.metadata.metadata_validator import validate_json
+
+            failed = False
+            for filename in sys.argv[1:]:
+                path = pathlib.Path(filename)
+                try:
+                    document = json.loads(path.read_text(encoding="utf-8"))
+                    valid, message = validate_json(document, path.parent)
+                except Exception as error:
+                    valid, message = False, error
+                if not valid:
+                    print(f"{path}: {message}", file=sys.stderr)
+                    failed = True
+            raise SystemExit(1 if failed else 0)
+        language: system
+        files: '(^|/)metadata\.json$'
+
+      - id: cmakelint
+        name: cmakelint
+        entry: cmakelint
+        language: python
+        additional_dependencies: ["cmakelint==1.4.3"]
+        args:
+          - --filter=-whitespace/indent,-linelength,-readability/wonkycase,-convention/filename,-package/stdargs
+        files: '(^|/)CMakeLists\.txt$|\.cmake$'

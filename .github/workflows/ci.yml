@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Repository contract and lint
+    runs-on: ubuntu-22.04
+    env:
+      PIP_EXTRA_INDEX_URL: https://pypi.nvidia.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install repository tools
+        run: python -m pip install -r requirements.txt
+
+      - name: Verify repository discovery
+        run: |
+          holoscan version
+          holoscan list --json
+
+      - name: Lint
+        run: holoscan lint

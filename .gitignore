@@ -1,0 +1,21 @@
+# CMake and CTest output
+build/
+build-*/
+install/
+Testing/
+CMakeUserPresets.json
+
+# Application data and generated inference artifacts
+data/
+*.engine
+
+# Python tooling
+.cache/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Editor state
+.idea/
+.vscode/
+*.swp

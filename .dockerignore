@@ -1,0 +1,11 @@
+.git
+.github
+.cache
+.venv
+build
+build-*
+data
+install
+Testing
+*.engine
+__pycache__
