@@ -61,7 +61,8 @@ holoscan test <application> --local
 ```
 
 Test requirements vary by application; some need a GPU, sample data, or attached
-hardware. See the [CI guide](docs/ci.md) for repository CI and GPU runner setup.
+hardware. See the [CI guide](docs/ci.md) for the shared application contract and
+hosted validation coverage.
 
 ## Contributing an application
 
