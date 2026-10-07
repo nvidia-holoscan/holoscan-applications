@@ -1,0 +1,82 @@
+{
+  "application": {
+    "name": "Endoscopy Tool Tracking",
+    "description": "Self-contained C++ replay and recurrent TensorRT tool tracking on Holoscan 5.x.",
+    "authors": [
+      {
+        "name": "Holoscan Team",
+        "affiliation": "NVIDIA"
+      }
+    ],
+    "language": "C++",
+    "version": "1.0.0",
+    "changelog": {
+      "1.0.0": "Self-contained Holoscan 5.x C++ application with real and synthetic replay modes."
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "5.0.0",
+      "tested_versions": [
+        "5.0.0"
+      ]
+    },
+    "platforms": [
+      "x86_64",
+      "aarch64"
+    ],
+    "tags": [
+      "Healthcare AI",
+      "Video",
+      "Computer Vision and Perception"
+    ],
+    "ranking": 0,
+    "requirements": {
+      "data": [
+        {
+          "name": "Holoscan endoscopy sample data",
+          "description": "Application-local prepare_data.py downloads the model and converts video to RGB24.",
+          "url": "https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara-holoscan/resources/holoscan_endoscopy_sample_data",
+          "version": "20230222"
+        }
+      ]
+    },
+    "default_mode": "replay",
+    "modes": {
+      "replay": {
+        "description": "Replay prepared surgical video, run recurrent inference, and display when available.",
+        "run": {
+          "command": "\"<holohub_app_bin>/endoscopy_tool_tracking\" --data \"<holohub_data_dir>/endoscopy\"",
+          "workdir": "holohub_app_bin"
+        },
+        "build": {
+          "cmake_options": [
+            "-DENDOSCOPY_ENABLE_VISUALIZATION=ON"
+          ]
+        }
+      },
+      "headless": {
+        "description": "Run the complete tracking pipeline without visualization.",
+        "build": {
+          "cmake_options": [
+            "-DENDOSCOPY_ENABLE_VISUALIZATION=OFF"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/endoscopy_tool_tracking\" --data \"<holohub_data_dir>/endoscopy\" --display false",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "ci": {
+        "description": "Finite data-free replay check; explicitly disables inference and display.",
+        "build": {
+          "cmake_options": [
+            "-DENDOSCOPY_ENABLE_VISUALIZATION=OFF"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/endoscopy_tool_tracking\" --synthetic true --inference false --display false --count 10",
+          "workdir": "holohub_app_bin"
+        }
+      }
+    }
+  }
+}
