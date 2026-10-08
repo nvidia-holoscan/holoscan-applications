@@ -10,7 +10,8 @@ Hosted jobs run the shared driver tests, CLI lifecycle contract checks, and
 application tests without SDK dependencies on Python 3.12, 3.13, and 3.14. Lint
 (including metadata, license markers, and internal references) runs once.
 Separate jobs validate the workflow, build the repository tooling Dockerfile,
-and check local documentation links. New PR commits cancel older PR runs.
+and check local and external documentation links, including section anchors.
+New PR commits cancel older PR runs.
 
 Hosted runners have no Holoscan SDK or GPU. Their lifecycle contract checks use
 `--dryrun`; the application-owned CPU tests actually execute through CTest.
@@ -41,7 +42,7 @@ coverage of any private or externally managed CI.
 | Added SDK execution job and `--execute` | On configured `main` runs, builds applications, runs finite `ci` modes, and executes their CTest suites on a GPU runner. | Dry runs cannot catch compiler, linker, runtime, or CUDA regressions. |
 | Added zero-test failure and diagnostics | Fails executable test runs that discover no tests; uploads CTest output and SDK logs even after failure. | Empty green runs and lost diagnostics hide missing coverage and failures. |
 | Added Docker build | Builds the actual repository Dockerfile on a small Python base; its existing CLI version check validates installation. | Dependency installation and Dockerfile regressions were unchecked. This does not validate an SDK image. |
-| Added workflow and local-link validation | Runs pinned actionlint in the Docker CI job and Lychee in offline mode. | YAML syntax alone misses invalid Actions expressions; broken local documentation links were unchecked. Remote URL availability is outside this check. Local lint does not require Docker. |
+| Added workflow and link validation | Runs pinned actionlint in the Docker CI job and Lychee for local and external Markdown links, including section anchors. | YAML syntax alone misses invalid Actions expressions; link checks catch missing files, sections, and unreachable URLs. Local lint does not require Docker. |
 | Removed separate dry-run build command | `holoscan run ... ci` now includes the build phase; test command validation remains. | The extra build process repeated the same mode's build planning. |
 | Removed repeated work from superseded PRs | Cancels obsolete PR runs; caches pre-commit environments; keeps lint outside the Python matrix. | Rechecking outdated commits and reinstalling unchanged hooks add cost without new coverage. |
 | Enforced build execution | Overrides `HOLOSCAN_CLI_ALWAYS_BUILD` for the driver's child processes. | An inherited setting could otherwise bypass validation or run an old executable. |
@@ -49,9 +50,9 @@ coverage of any private or externally managed CI.
 | Kept metadata/compliance inside lint | Retains the existing schema, SPDX identifier, and internal-artifact hooks. | Separate metadata/schema and copyright jobs would repeat overlapping pre-commit checks. No such standalone jobs existed here to delete. |
 
 Holohub's standalone metadata workflow additionally gathers catalog metadata;
-that catalog generation is distinct from schema validation. Its copyright check
-also enforces NVIDIA headers and years, whereas this repository's existing hook
-checks the SPDX license identifier. Those are not interchangeable guarantees.
+that catalog generation is distinct from schema validation. This repository's
+SPDX hook now also validates copyright notices and years, and Codespell checks
+spelling through the shared lint configuration.
 CLI source-checkout and wrapper tests belong to the CLI/wrapper repository; this
 repository tests the pinned installed CLI against its own applications.
 
@@ -216,15 +217,31 @@ integration is implied by the SDK job.
   the existing C/C++ checks. CMake files use the upstream cmakelint hook.
 - markdownlint-cli2 checks and fixes Markdown using `.markdownlint-cli2.yaml` and
   honors `.gitignore`. Its Node.js runtime is pinned and installed by pre-commit.
+- Codespell reports common spelling mistakes in tracked text files, including
+  source comments and documentation. It uses the same generated-file exclusions
+  as the other hooks.
 - File checks catch malformed JSON/YAML/TOML, merge conflicts, case collisions,
   broken symlinks, Python debug statements, private keys, and files over 1 MiB.
   Whitespace fixes preserve Markdown hard breaks and normalize line endings.
-- Repository hooks check SPDX identifiers, internal staging references, and
-  Holoscan metadata using `check_spdx.py`, `check_internal_artifacts.py`, and
+- Repository hooks check SPDX identifiers, copyright notices, internal staging
+  references, and Holoscan metadata using `check_copyright.py`, `check_internal_artifacts.py`, and
   `validate_metadata.py` in `.github/scripts/`. Each script accepts filenames
   as arguments and can also be run directly from the repository root. Metadata
   validation uses the CLI and `jsonschema` from `requirements.txt`; the hooks
   require no SDK or GPU. Their regression tests run with the shared driver tests.
+
+The SPDX hook requires an Apache-2.0 license identifier and a copyright notice
+with a holder and a valid year or year range. It accepts SPDX copyright notices
+and traditional `Copyright` headers. Reversed ranges and future years fail.
+Changed files must include the current UTC year in at least one notice; older
+third-party notices are preserved. Locally, this applies to staged, unstaged,
+and untracked changes. CI compares against the pull request's base commit or
+the previous push; the lint checkout fetches the required history. Set
+`COPYRIGHT_BASE_REF` to a commit or ref to check committed changes locally.
+An unavailable explicit base fails the check. Outside a Git checkout, or for
+an initial commit or branch push, all supplied files need the current year.
+Manual CI runs still validate all headers and ranges without requiring annual
+changes to untouched files. The hook reports errors without rewriting notices.
 
 Hook repositories use immutable commit revisions with release labels. To update
 them, run `pre-commit autoupdate --freeze`, review the changes, and run

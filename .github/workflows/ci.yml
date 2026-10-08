@@ -26,6 +26,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Copyright years are checked against the PR base or previous push.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -40,6 +43,8 @@ jobs:
           key: pre-commit-${{ runner.os }}-${{ runner.arch }}-py312-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Lint
+        env:
+          COPYRIGHT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: holoscan lint
 
   hosted:
@@ -107,15 +112,15 @@ jobs:
         run: docker build --build-arg BASE_IMAGE=python:3.12-slim --tag holoscan-ci-tools .
 
   links:
-    name: Check local documentation links
-    runs-on: ubuntu-22.04
+    name: Check documentation links
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: lycheeverse/lychee-action@v2
         with:
           lycheeVersion: v0.24.2
-          args: --offline --no-progress './**/*.md'
+          args: --no-progress --include-fragments './**/*.md'
           fail: true
 
   sdk:
