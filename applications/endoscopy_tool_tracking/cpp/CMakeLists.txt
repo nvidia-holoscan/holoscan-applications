@@ -16,6 +16,11 @@ set(ENDOSCOPY_DATA_DIR "" CACHE PATH "Prepared sample data for real-model integr
 # Also honor the standard SDK environment variable for direct CMake consumers.
 if(DEFINED ENV{HOLOSCAN_SDK_ROOT})
   list(PREPEND CMAKE_PREFIX_PATH "$ENV{HOLOSCAN_SDK_ROOT}")
+elseif(DEFINED ENV{HOLOSCAN_LIB_PATH})
+  # CLI 5.0.0a2 mounts the supplied SDK and sets its library path, but does not
+  # propagate the SDK root into the recursive command for application projects.
+  get_filename_component(_endoscopy_sdk_root "$ENV{HOLOSCAN_LIB_PATH}" DIRECTORY)
+  list(PREPEND CMAKE_PREFIX_PATH "${_endoscopy_sdk_root}")
 endif()
 find_package(holoscan 5.0 REQUIRED CONFIG COMPONENTS core sensor_io)
 find_package(CUDAToolkit REQUIRED)

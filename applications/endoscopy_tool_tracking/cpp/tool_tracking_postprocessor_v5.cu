@@ -30,6 +30,14 @@ constexpr std::size_t kMaskWidth = 107U;
 constexpr std::size_t kMaskPixels = kMaskHeight * kMaskWidth;
 constexpr float kCrossSize = 0.05F;
 
+bool valid_tracking_outputs(const std::array<float, kClasses>& probabilities,
+                            const std::array<float, kClasses * 2U>& coordinates) {
+  return std::ranges::all_of(probabilities, [](float value) {
+           return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
+         }) &&
+         std::ranges::all_of(coordinates, [](float value) { return std::isfinite(value); });
+}
+
 struct Rgb {
   float r;
   float g;
@@ -178,6 +186,10 @@ holoscan::expected<void, holoscan::Error> ToolTrackingPostprocessorOp::compute(
                 "failed to copy probabilities/coordinates to host: probs=" +
                     (probs_copy ? std::string{"ok"} : probs_copy.error().message) +
                     " coords=" + (coords_copy ? std::string{"ok"} : coords_copy.error().message));
+  }
+  if (!valid_tracking_outputs(host_probs, host_coords)) {
+    return fail(holoscan::ErrorCode::kFailure,
+                "invalid model probabilities or coordinates; check inference precision");
   }
   HOLOSCAN_LOG_DEBUG("tool probabilities: [{:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}, {:.3f}]",
                      host_probs[0], host_probs[1], host_probs[2], host_probs[3], host_probs[4],

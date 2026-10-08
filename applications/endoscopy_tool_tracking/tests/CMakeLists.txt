@@ -24,15 +24,10 @@ add_test(NAME endoscopy_postprocessor COMMAND endoscopy_postprocessor_test)
 set_tests_properties(endoscopy_malformed_engine endoscopy_postprocessor
   PROPERTIES LABELS "gpu" TIMEOUT 120)
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME endoscopy_replay
   COMMAND ${CMAKE_COMMAND} -E env ENDOSCOPY_EXECUTABLE=$<TARGET_FILE:endoscopy_tool_tracking>
     ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_application.py)
 set_tests_properties(endoscopy_replay PROPERTIES LABELS "endoscopy;replay" TIMEOUT 120)
-add_test(NAME endoscopy_data_preparation
-  COMMAND ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}
-    -p test_prepare_data.py)
-set_tests_properties(endoscopy_data_preparation PROPERTIES LABELS "endoscopy;data" TIMEOUT 60)
 if(ENDOSCOPY_DATA_DIR)
   add_test(NAME endoscopy_inference
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/inference_smoke.py

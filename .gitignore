@@ -8,6 +8,7 @@ CMakeUserPresets.json
 # Application data and generated inference artifacts
 data/
 *.engine
+.nv/
 
 # Python tooling
 .cache/

@@ -2,6 +2,7 @@
 .github
 .cache
 .venv
+.nv
 build
 build-*
 data

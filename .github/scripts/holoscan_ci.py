@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Validate the Holoscan CLI lifecycle contract for every discovered application."""
+"""Validate or execute the CLI lifecycle for every discovered application."""
 
+import argparse
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -14,8 +16,8 @@ class DiscoveryError(ValueError):
     """The CLI returned an invalid or ambiguous application discovery document."""
 
 
-def plan_commands(discovery: object) -> list[list[str]]:
-    """Plan dry runs from ``holoscan list --json`` without executing project code."""
+def plan_commands(discovery: object, *, execute: bool = False) -> list[list[str]]:
+    """Plan local lifecycle commands; project execution requires explicit opt-in."""
     if not isinstance(discovery, dict) or not isinstance(
         discovery.get("projects"), list
     ):
@@ -72,12 +74,11 @@ def plan_commands(discovery: object) -> list[list[str]]:
             applications[key] = (has_ci, source)
 
     commands = []
+    dryrun_args = [] if execute else ["--dryrun"]
     for (name, language), (has_ci, _) in sorted(applications.items()):
         language_args = ["--language", language] if language else []
         if has_ci:
-            commands.append(
-                ["holoscan", "build", name, "ci", "--local", "--dryrun", *language_args]
-            )
+            # `run` already builds with the selected mode's configuration.
             commands.append(
                 [
                     "holoscan",
@@ -85,8 +86,7 @@ def plan_commands(discovery: object) -> list[list[str]]:
                     name,
                     "ci",
                     "--local",
-                    "--no-local-build",
-                    "--dryrun",
+                    *dryrun_args,
                     *language_args,
                 ]
             )
@@ -97,7 +97,8 @@ def plan_commands(discovery: object) -> list[list[str]]:
                 name,
                 "--local",
                 "--no-xvfb",
-                "--dryrun",
+                *(["--ctest-options=--no-tests=error"] if execute else []),
+                *dryrun_args,
                 *language_args,
             ]
         )
@@ -105,8 +106,15 @@ def plan_commands(discovery: object) -> list[list[str]]:
 
 
 def main() -> int:
-    """Discover applications and fail on the first invalid CLI dry run."""
-    repo = Path(__file__).resolve().parents[1]
+    """Discover applications and fail on the first unsuccessful CLI command."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Build, run CI modes, and test with the installed SDK and hardware.",
+    )
+    args = parser.parse_args()
+    repo = Path(__file__).resolve().parents[2]
     try:
         discovered = subprocess.run(
             ["holoscan", "list", "--json"],
@@ -116,14 +124,22 @@ def main() -> int:
             check=True,
         )
         print(discovered.stdout, end="", flush=True)
-        commands = plan_commands(json.loads(discovered.stdout))
+        commands = plan_commands(json.loads(discovered.stdout), execute=args.execute)
         if not commands:
+            if args.execute:
+                raise DiscoveryError("No applications discovered; nothing was tested.")
             print("No applications discovered; no lifecycle commands to validate.")
             return 0
+        # `run` must validate/build this checkout even if a developer or image
+        # disables automatic builds in its default environment.
+        environment = {**os.environ, "HOLOSCAN_CLI_ALWAYS_BUILD": "true"}
         for command in commands:
             print(f"+ {shlex.join(command)}", flush=True)
-            subprocess.run(command, cwd=repo, check=True)
-        print(f"Validated {len(commands)} dry-run lifecycle commands.")
+            subprocess.run(command, cwd=repo, env=environment, check=True)
+        if args.execute:
+            print(f"Executed {len(commands)} lifecycle commands.")
+        else:
+            print(f"Validated {len(commands)} dry-run lifecycle commands.")
         return 0
     except subprocess.CalledProcessError as error:
         print(

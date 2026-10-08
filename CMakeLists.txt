@@ -14,6 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_ALL "Build every application in this repository" OFF)
 option(HOLOHUB_BUILD_CPP "Build support for C++" ON)
+option(HOLOHUB_BUILD_PYTHON "Build support for Python" ON)
 
 include(CTest)
 add_subdirectory(applications)

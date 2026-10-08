@@ -12,13 +12,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_EXTRA_INDEX_URL: https://pypi.nvidia.com
+
 jobs:
   static:
-    name: Application CLI contract and lint
+    name: Lint
     runs-on: ubuntu-22.04
     timeout-minutes: 20
-    env:
-      PIP_EXTRA_INDEX_URL: https://pypi.nvidia.com
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,13 +34,127 @@ jobs:
       - name: Install repository tools
         run: python -m pip install -r requirements.txt
 
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ runner.arch }}-py312-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Lint
+        run: holoscan lint
+
+  hosted:
+    name: Application checks (Python ${{ matrix.python }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            .github/requirements-ci.txt
+
+      - name: Install test tools
+        run: python -m pip install -r .github/requirements-ci.txt
+
       - name: Test the shared CI driver
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s .github/scripts -v
 
       - name: Verify application lifecycle command construction
         run: |
           holoscan version
-          python scripts/holoscan_ci.py
+          python .github/scripts/holoscan_ci.py
 
-      - name: Lint
-        run: holoscan lint
+      # Both language scopes are disabled so only SDK-free tests registered in
+      # application top-level CMakeLists.txt files are configured and run.
+      - name: Run application tests without SDK dependencies
+        run: >-
+          holoscan test --local --no-xvfb --verbose
+          --cmake-options='-DBUILD_ALL=ON;-DHOLOHUB_BUILD_CPP=OFF;-DHOLOHUB_BUILD_PYTHON=OFF'
+          --ctest-options=--no-tests=error
+
+      - name: Upload CTest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-ctest-python-${{ matrix.python }}
+          path: build-*/Testing/**
+          retention-days: 7
+
+      - name: Report SDK coverage configuration
+        if: matrix.python == '3.12' && (vars.HOLOSCAN_CI_RUNNER_LABELS == '' || vars.HOLOSCAN_CI_SDK_IMAGE == '')
+        run: |
+          echo 'SDK/GPU tests are disabled: configure HOLOSCAN_CI_RUNNER_LABELS and HOLOSCAN_CI_SDK_IMAGE (see docs/ci.md).' >> "$GITHUB_STEP_SUMMARY"
+
+  docker:
+    name: Validate workflows and build tooling image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate GitHub Actions workflows
+        run: >-
+          docker run --rm --user "$(id -u):$(id -g)"
+          --volume "$GITHUB_WORKSPACE:/repo:ro" --workdir /repo
+          rhysd/actionlint:1.7.12 -color
+      - name: Build Dockerfile and verify installed CLI
+        run: docker build --build-arg BASE_IMAGE=python:3.12-slim --tag holoscan-ci-tools .
+
+  links:
+    name: Check local documentation links
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          lycheeVersion: v0.24.2
+          args: --offline --no-progress './**/*.md'
+          fail: true
+
+  sdk:
+    name: Build, run, and test applications with the SDK
+    # Self-hosted execution is restricted to main, never PR code. The configured
+    # image must contain a compatible SDK and dependencies for every application.
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name != 'pull_request' &&
+      vars.HOLOSCAN_CI_RUNNER_LABELS != '' && vars.HOLOSCAN_CI_SDK_IMAGE != ''
+    needs: [static, hosted, docker]
+    runs-on: ${{ fromJSON(vars.HOLOSCAN_CI_RUNNER_LABELS || '["ubuntu-22.04"]') }}
+    timeout-minutes: 60
+    env:
+      SDK_IMAGE: ${{ vars.HOLOSCAN_CI_SDK_IMAGE }}
+      CI_IMAGE: holoscan-ci-sdk:${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build SDK tooling image
+        shell: bash
+        run: |
+          docker build --build-arg "BASE_IMAGE=$SDK_IMAGE" --tag "$CI_IMAGE" . 2>&1 | tee sdk-build.log
+
+      - name: Execute application lifecycle
+        shell: bash
+        run: |
+          docker run --rm --gpus all --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace \
+            --env PYTHONUNBUFFERED=1 --env HOME=/workspace "$CI_IMAGE" \
+            python3 .github/scripts/holoscan_ci.py --execute 2>&1 | tee sdk-tests.log
+
+      - name: Upload build and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-ctest
+          path: |
+            sdk-*.log
+            build-*/Testing/**
+          retention-days: 7

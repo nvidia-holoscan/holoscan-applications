@@ -1,0 +1,4 @@
+# Hosted CTest tools; SDK images supply their own compiler and CUDA toolchain.
+-r ../requirements.txt
+cmake==4.4.2
+ninja==1.13.0

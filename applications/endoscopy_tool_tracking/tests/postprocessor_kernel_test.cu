@@ -35,6 +35,24 @@ int main() {
     }
   };
 
+  std::array<float, 7U> host_probs{};
+  std::array<float, 14U> host_coords{};
+  require(endoscopy_tool_tracking::valid_tracking_outputs(host_probs, host_coords),
+          "finite zero probabilities are valid no-detection output");
+  for (const float invalid : {std::numeric_limits<float>::quiet_NaN(),
+                              std::numeric_limits<float>::infinity(), -0.1F, 1.1F}) {
+    host_probs[6] = invalid;
+    require(!endoscopy_tool_tracking::valid_tracking_outputs(host_probs, host_coords),
+            "invalid probabilities must fail instead of silently hiding every tool");
+  }
+  host_probs[6] = 0.9F;
+  host_coords[13] = std::numeric_limits<float>::quiet_NaN();
+  require(!endoscopy_tool_tracking::valid_tracking_outputs(host_probs, host_coords),
+          "non-finite coordinates must fail instead of reaching HoloViz");
+  host_coords[13] = 0.5F;
+  require(endoscopy_tool_tracking::valid_tracking_outputs(host_probs, host_coords),
+          "valid detections must be accepted");
+
   probabilities[0] = std::numeric_limits<float>::quiet_NaN();
   probabilities[1] = 0.5F;
   run();

@@ -42,9 +42,9 @@ int main() {
   require(initial != cache_filename(params, device),
           "replacing a same-size ONNX model must invalidate its cached engine");
   write_model("model A");
-  params.enable_fp16 = false;
-  require(initial != cache_filename(params, device), "FP16 changes must invalidate cache");
   params.enable_fp16 = true;
+  require(initial != cache_filename(params, device), "FP16 changes must invalidate cache");
+  params.enable_fp16 = false;
   params.max_workspace_size /= 2U;
   require(initial != cache_filename(params, device), "workspace changes must invalidate cache");
   params.max_workspace_size *= 2U;

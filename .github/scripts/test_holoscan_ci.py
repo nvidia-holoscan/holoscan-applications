@@ -11,7 +11,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from scripts.holoscan_ci import plan_commands
+from holoscan_ci import plan_commands
 
 
 def application(name="demo", language=None, modes=None):
@@ -79,7 +79,7 @@ class PlanCommandsTest(unittest.TestCase):
             ],
         )
 
-    def test_ci_mode_builds_and_runs_before_testing(self):
+    def test_ci_mode_run_includes_the_build_before_testing(self):
         self.assertEqual(
             plan_commands(
                 discovery(application(language=["C++"], modes=["replay", "ci"]))
@@ -87,21 +87,10 @@ class PlanCommandsTest(unittest.TestCase):
             [
                 [
                     "holoscan",
-                    "build",
-                    "demo",
-                    "ci",
-                    "--local",
-                    "--dryrun",
-                    "--language",
-                    "cpp",
-                ],
-                [
-                    "holoscan",
                     "run",
                     "demo",
                     "ci",
                     "--local",
-                    "--no-local-build",
                     "--dryrun",
                     "--language",
                     "cpp",
@@ -187,11 +176,9 @@ class PlanCommandsTest(unittest.TestCase):
                 application(language=["C++"]),
             )
         )
+        self.assertEqual([command[1] for command in commands], ["test", "run", "test"])
         self.assertEqual(
-            [command[1] for command in commands], ["test", "build", "run", "test"]
-        )
-        self.assertEqual(
-            [command[-1] for command in commands], ["cpp", "python", "python", "python"]
+            [command[-1] for command in commands], ["cpp", "python", "python"]
         )
 
     def test_invalid_discovery_shapes_fail_clearly(self):
@@ -237,9 +224,11 @@ class PlanCommandsTest(unittest.TestCase):
 
 
 class DriverTest(unittest.TestCase):
-    def run_driver(self, payload, fail="", missing_cli=False):
+    def run_driver(
+        self, payload, fail="", missing_cli=False, args=(), always_build="true"
+    ):
         """Exercise the entry point against a controlled CLI subprocess."""
-        repo = Path(__file__).resolve().parents[1]
+        repo = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory(prefix="holoscan ci ") as tmp:
             root = Path(tmp)
             (root / "discovery.json").write_text(payload, encoding="utf-8")
@@ -255,7 +244,10 @@ class DriverTest(unittest.TestCase):
 
                         root = Path(__file__).parent
                         with (root / "calls.jsonl").open("a") as log:
-                            log.write(json.dumps({"args": sys.argv[1:], "cwd": os.getcwd()}) + "\\n")
+                            log.write(json.dumps({
+                                "args": sys.argv[1:], "cwd": os.getcwd(),
+                                "always_build": os.environ.get("HOLOSCAN_CLI_ALWAYS_BUILD"),
+                            }) + "\\n")
                         if sys.argv[1] == os.environ.get("CI_TEST_FAIL"):
                             print("fixture CLI failure", file=sys.stderr)
                             raise SystemExit(7)
@@ -266,9 +258,18 @@ class DriverTest(unittest.TestCase):
                 )
                 executable.chmod(0o755)
             result = subprocess.run(
-                [sys.executable, str(repo / "scripts" / "holoscan_ci.py")],
+                [
+                    sys.executable,
+                    str(repo / ".github" / "scripts" / "holoscan_ci.py"),
+                    *args,
+                ],
                 cwd=root,
-                env={**os.environ, "PATH": str(root), "CI_TEST_FAIL": fail},
+                env={
+                    **os.environ,
+                    "PATH": str(root),
+                    "CI_TEST_FAIL": fail,
+                    "HOLOSCAN_CLI_ALWAYS_BUILD": always_build,
+                },
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -292,20 +293,10 @@ class DriverTest(unittest.TestCase):
             [
                 ["list", "--json"],
                 [
-                    "build",
-                    "nested/demo",
-                    "ci",
-                    "--local",
-                    "--dryrun",
-                    "--language",
-                    "python",
-                ],
-                [
                     "run",
                     "nested/demo",
                     "ci",
                     "--local",
-                    "--no-local-build",
                     "--dryrun",
                     "--language",
                     "python",
@@ -322,7 +313,7 @@ class DriverTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            {call["cwd"] for call in calls}, {str(Path(__file__).resolve().parents[1])}
+            {call["cwd"] for call in calls}, {str(Path(__file__).resolve().parents[2])}
         )
         self.assertIn("dry-run", result.stdout)
 
@@ -358,9 +349,63 @@ class DriverTest(unittest.TestCase):
             json.dumps(discovery(application(modes=["ci"]))), fail="run"
         )
         self.assertEqual(result.returncode, 7)
-        self.assertEqual([call["args"][0] for call in calls], ["list", "build", "run"])
+        self.assertEqual([call["args"][0] for call in calls], ["list", "run"])
         self.assertIn("fixture CLI failure", result.stderr)
         self.assertIn("holoscan run demo ci", result.stderr)
+
+    def test_execute_runs_the_lifecycle_and_rejects_empty_ctest_suites(self):
+        result, calls = self.run_driver(
+            json.dumps(discovery(application(language=["C++"], modes=["ci"]))),
+            args=("--execute",),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [call["args"] for call in calls],
+            [
+                ["list", "--json"],
+                ["run", "demo", "ci", "--local", "--language", "cpp"],
+                [
+                    "test",
+                    "demo",
+                    "--local",
+                    "--no-xvfb",
+                    "--ctest-options=--no-tests=error",
+                    "--language",
+                    "cpp",
+                ],
+            ],
+        )
+        self.assertIn("Executed", result.stdout)
+
+    def test_execute_propagates_application_test_failures(self):
+        result, calls = self.run_driver(
+            json.dumps(discovery(application())), fail="test", args=("--execute",)
+        )
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual([call["args"][0] for call in calls], ["list", "test"])
+        self.assertNotIn("--dryrun", calls[-1]["args"])
+
+    def test_execute_does_not_claim_success_for_an_empty_repository(self):
+        result, calls = self.run_driver(json.dumps(discovery()), args=("--execute",))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([call["args"] for call in calls], [["list", "--json"]])
+        self.assertIn("No applications", result.stderr)
+
+    def test_lifecycle_cannot_inherit_an_environment_that_skips_builds(self):
+        for args in ((), ("--execute",)):
+            with self.subTest(args=args):
+                result, calls = self.run_driver(
+                    json.dumps(discovery(application(modes=["ci"]))),
+                    args=args,
+                    always_build="0",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    [call["args"][0] for call in calls], ["list", "run", "test"]
+                )
+                self.assertEqual(
+                    [call["always_build"] for call in calls[1:]], ["true", "true"]
+                )
 
     def test_ambiguous_sources_fail_before_any_lifecycle_command(self):
         first = application(language=["Python"])

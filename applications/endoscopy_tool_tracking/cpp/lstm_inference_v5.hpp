@@ -29,7 +29,8 @@ struct LstmInferenceParams {
   std::string model_path;
   std::string engine_cache_dir;
   bool force_engine_update{false};
-  bool enable_fp16{true};
+  // FP16 produces NaN outputs for this recurrent model on GB10 / TensorRT 10.16.
+  bool enable_fp16{false};
   std::uint64_t max_workspace_size{2'147'483'648ULL};
 };
 

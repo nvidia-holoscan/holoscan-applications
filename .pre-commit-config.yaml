@@ -53,7 +53,7 @@ repos:
                 print("Missing Apache-2.0 SPDX identifier:\n" + "\n".join(missing), file=sys.stderr)
             raise SystemExit(1 if missing else 0)
         language: system
-        files: '(^|/)(CMakeLists\.txt|Dockerfile)$|\.(c|cc|cpp|cu|cuh|h|hpp|py)$|^\.github/workflows/.*\.ya?ml$'
+        files: '(^|/)(CMakeLists\.txt|Dockerfile)$|\.(c|cc|cpp|cu|cuh|h|hpp|py|cmake)$|^\.github/workflows/.*\.ya?ml$'
 
       - id: internal-artifact-check
         name: reject internal staging references
