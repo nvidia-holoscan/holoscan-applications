@@ -7,12 +7,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
-#include <holoscan/core/compile.hpp>
-#include <holoscan/core/connection_options.hpp>
-#include <holoscan/core/graph.hpp>
-#include <holoscan/core/managed_shutdown_signals.hpp>
-#include <holoscan/core/run.hpp>
-#include <holoscan/time/realtime_clock.hpp>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -23,6 +17,13 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <holoscan/core/compile.hpp>
+#include <holoscan/core/connection_options.hpp>
+#include <holoscan/core/graph.hpp>
+#include <holoscan/core/managed_shutdown_signals.hpp>
+#include <holoscan/core/run.hpp>
+#include <holoscan/time/realtime_clock.hpp>
 #if ENDOSCOPY_ENABLE_VISUALIZATION
 #include <holoscan/visualization/holoviz_op.hpp>
 #endif
@@ -35,7 +36,8 @@
 #include "video_stream_replayer.hpp"
 
 namespace {
-using namespace std::chrono_literals;
+using std::chrono_literals::operator""ms;
+using std::chrono_literals::operator""s;
 namespace endo = endoscopy_tool_tracking;
 
 enum class DisplayMode { Auto, On, Off };

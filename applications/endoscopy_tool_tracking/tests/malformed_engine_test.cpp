@@ -1,9 +1,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include <iostream>
+#include <NvInfer.h>
 
-#include "../cpp/lstm_inference_v5.cpp"
+#include <cstdint>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string_view>
+#include <vector>
+
+// Exercise the private engine validator without exposing a test-only public API.
+#include "../cpp/lstm_inference_v5.cpp"  // NOLINT(build/include)
 
 namespace {
 class TestLogger final : public nvinfer1::ILogger {
@@ -17,7 +25,7 @@ class TestLogger final : public nvinfer1::ILogger {
 }  // namespace
 
 int main() {
-  using namespace endoscopy_tool_tracking;
+  using endoscopy_tool_tracking::validate_engine;
   TestLogger logger;
   std::unique_ptr<nvinfer1::IBuilder> builder{nvinfer1::createInferBuilder(logger)};
   if (!builder) {

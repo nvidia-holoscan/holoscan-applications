@@ -1,110 +1,92 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-exclude: '^(build[^/]*|install[^/]*|data|\.cache|\.venv)/'
+minimum_pre_commit_version: "4.6.2"
+default_stages: [pre-commit]
+exclude: >-
+  (?x)(
+    ^(build[^/]*|install[^/]*|data|Testing|\.cache|\.venv|\.nv)/
+    |(^|/)__pycache__/
+  )
 
+# Keep immutable revisions with readable release labels.
+# Refresh with: pre-commit autoupdate --freeze
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024, --enforce-all]
+      - id: check-case-conflict
       - id: check-json
       - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
       - id: check-yaml
+      - id: debug-statements
+      - id: detect-private-key
       - id: end-of-file-fixer
       - id: mixed-line-ending
+        args: [--fix=lf]
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.6
+    rev: f12be1ebaa5351c1fc76472de98db2c3446c8253  # frozen: v0.16.10
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
+        types_or: [python, pyi]
       - id: ruff-format
+        types_or: [python, pyi]
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: 98ad4ddb9c057de2f5b9e93e44e6db959807d68c  # frozen: v23.1.3
+    hooks:
+      - id: clang-format
+        types_or: [c, c++, cuda]
+        args: [--style=file, --fallback-style=none]
 
   - repo: https://github.com/cpplint/cpplint
-    rev: 2.0.2
+    rev: 350702a4d39395571bd118c9a3cff0a573488d61  # frozen: 2.0.2
     hooks:
       - id: cpplint
         args: [--quiet]
 
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.48.0
+  - repo: https://github.com/cmake-lint/cmake-lint
+    rev: 7c644095eb566fa805839ad53b733f7bcdb73032  # frozen: 1.4.3
     hooks:
-      - id: markdownlint
-        args: [--fix, --config, .markdownlint.yaml, --ignore-path, .markdownlintignore]
+      - id: cmakelint
+        args:
+          - --filter=-whitespace/indent,-linelength,-readability/wonkycase,-convention/filename,-package/stdargs
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: 916ad0aaa108c64d294101002066f530ea170b10  # frozen: v0.23.3
+    hooks:
+      - id: markdownlint-cli2
+        language_version: "24.21.0"
+        args: [--fix, --no-globs]
 
   - repo: local
     hooks:
       - id: spdx-license-identifier
-        name: require the Apache-2.0 SPDX identifier in source and build files
-        entry: python3 -c
-        args:
-          - |
-            import pathlib
-            import sys
-
-            marker = "SPDX-License-Identifier: Apache-2.0"
-            missing = []
-            for filename in sys.argv[1:]:
-                path = pathlib.Path(filename)
-                if marker not in path.read_text(encoding="utf-8", errors="replace"):
-                    missing.append(str(path))
-            if missing:
-                print("Missing Apache-2.0 SPDX identifier:\n" + "\n".join(missing), file=sys.stderr)
-            raise SystemExit(1 if missing else 0)
-        language: system
+        name: check SPDX license
+        entry: python3 .github/scripts/check_spdx.py
+        language: python
         files: '(^|/)(CMakeLists\.txt|Dockerfile)$|\.(c|cc|cpp|cu|cuh|h|hpp|py|cmake)$|^\.github/workflows/.*\.ya?ml$'
+        types: [text]
 
       - id: internal-artifact-check
-        name: reject internal staging references
-        entry: python3 -c
-        args:
-          - |
-            import pathlib
-            import sys
-
-            marker = "nv" + "staging"
-            matches = []
-            for filename in sys.argv[1:]:
-                path = pathlib.Path(filename)
-                if marker in path.read_text(encoding="utf-8", errors="replace").lower():
-                    matches.append(str(path))
-            if matches:
-                print("Internal staging reference found:\n" + "\n".join(matches), file=sys.stderr)
-            raise SystemExit(1 if matches else 0)
-        language: system
-        files: '\.(c|cc|cpp|cu|cuh|h|hpp|py|cmake|json|md|txt|ya?ml)$|(^|/)(CMakeLists\.txt|Dockerfile)$'
+        name: check internal references
+        entry: python3 .github/scripts/check_internal_artifacts.py
+        language: python
+        files: '\.(c|cc|cpp|cu|cuh|h|hpp|py|cmake|json|md|toml|txt|ya?ml)$|(^|/)(CMakeLists\.txt|Dockerfile)$'
+        types: [text]
 
       - id: holoscan-metadata-validate
-        name: validate metadata.json with the installed holoscan-cli schemas
-        entry: python3 -c
-        args:
-          - |
-            import json
-            import pathlib
-            import sys
-            from holoscan_cli.metadata.metadata_validator import validate_json
-
-            failed = False
-            for filename in sys.argv[1:]:
-                path = pathlib.Path(filename)
-                try:
-                    document = json.loads(path.read_text(encoding="utf-8"))
-                    valid, message = validate_json(document, path.parent)
-                except Exception as error:
-                    valid, message = False, error
-                if not valid:
-                    print(f"{path}: {message}", file=sys.stderr)
-                    failed = True
-            raise SystemExit(1 if failed else 0)
+        name: validate Holoscan metadata
+        entry: python3 .github/scripts/validate_metadata.py
+        # Use the CLI and jsonschema installed from requirements.txt.
         language: system
         files: '(^|/)metadata\.json$'
-
-      - id: cmakelint
-        name: cmakelint
-        entry: cmakelint
-        language: python
-        additional_dependencies: ["cmakelint==1.4.3"]
-        args:
-          - --filter=-whitespace/indent,-linelength,-readability/wonkycase,-convention/filename,-package/stdargs
-        files: '(^|/)CMakeLists\.txt$|\.cmake$'
+        types: [json]

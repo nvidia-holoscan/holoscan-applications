@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+
 #include <holoscan/core/execution_context.hpp>
 
 namespace endoscopy_tool_tracking {

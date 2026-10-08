@@ -8,9 +8,10 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
+
 #include <holoscan/core/payload_options.hpp>
 #include <holoscan/core/tensor_output_loan.hpp>
-#include <utility>
 
 #include "video_preprocessor.hpp"
 

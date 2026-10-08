@@ -81,9 +81,7 @@ class PlanCommandsTest(unittest.TestCase):
 
     def test_ci_mode_run_includes_the_build_before_testing(self):
         self.assertEqual(
-            plan_commands(
-                discovery(application(language=["C++"], modes=["replay", "ci"]))
-            ),
+            plan_commands(discovery(application(language=["C++"], modes=["replay", "ci"]))),
             [
                 [
                     "holoscan",
@@ -177,9 +175,7 @@ class PlanCommandsTest(unittest.TestCase):
             )
         )
         self.assertEqual([command[1] for command in commands], ["test", "run", "test"])
-        self.assertEqual(
-            [command[-1] for command in commands], ["cpp", "python", "python"]
-        )
+        self.assertEqual([command[-1] for command in commands], ["cpp", "python", "python"])
 
     def test_invalid_discovery_shapes_fail_clearly(self):
         for value in (
@@ -224,9 +220,7 @@ class PlanCommandsTest(unittest.TestCase):
 
 
 class DriverTest(unittest.TestCase):
-    def run_driver(
-        self, payload, fail="", missing_cli=False, args=(), always_build="true"
-    ):
+    def run_driver(self, payload, fail="", missing_cli=False, args=(), always_build="true"):
         """Exercise the entry point against a controlled CLI subprocess."""
         repo = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory(prefix="holoscan ci ") as tmp:
@@ -277,9 +271,7 @@ class DriverTest(unittest.TestCase):
             )
             log = root / "calls.jsonl"
             calls = (
-                [json.loads(line) for line in log.read_text().splitlines()]
-                if log.exists()
-                else []
+                [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             )
             return result, calls
 
@@ -324,9 +316,7 @@ class DriverTest(unittest.TestCase):
         self.assertIn("No applications", result.stdout)
 
     def test_discovery_failure_is_visible_and_stops_the_driver(self):
-        result, calls = self.run_driver(
-            json.dumps(discovery(application())), fail="list"
-        )
+        result, calls = self.run_driver(json.dumps(discovery(application())), fail="list")
         self.assertEqual(result.returncode, 7)
         self.assertEqual(len(calls), 1)
         self.assertIn("fixture CLI failure", result.stderr)
@@ -400,12 +390,8 @@ class DriverTest(unittest.TestCase):
                     always_build="0",
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(
-                    [call["args"][0] for call in calls], ["list", "run", "test"]
-                )
-                self.assertEqual(
-                    [call["always_build"] for call in calls[1:]], ["true", "true"]
-                )
+                self.assertEqual([call["args"][0] for call in calls], ["list", "run", "test"])
+                self.assertEqual([call["always_build"] for call in calls[1:]], ["true", "true"])
 
     def test_ambiguous_sources_fail_before_any_lifecycle_command(self):
         first = application(language=["Python"])

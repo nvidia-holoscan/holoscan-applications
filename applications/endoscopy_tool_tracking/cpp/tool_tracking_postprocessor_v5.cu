@@ -11,12 +11,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <holoscan/core/payload_options.hpp>
-#include <holoscan/core/tensor_output_loan.hpp>
-#include <holoscan/logger/logger.hpp>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <holoscan/core/payload_options.hpp>
+#include <holoscan/core/tensor_output_loan.hpp>
+#include <holoscan/logger/logger.hpp>
 
 #include "tool_tracking_postprocessor_v5.hpp"
 #include "video_stream_replayer.hpp"
@@ -32,9 +33,9 @@ constexpr float kCrossSize = 0.05F;
 
 bool valid_tracking_outputs(const std::array<float, kClasses>& probabilities,
                             const std::array<float, kClasses * 2U>& coordinates) {
-  return std::ranges::all_of(probabilities, [](float value) {
-           return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
-         }) &&
+  return std::ranges::all_of(
+             probabilities,
+             [](float value) { return std::isfinite(value) && value >= 0.0F && value <= 1.0F; }) &&
          std::ranges::all_of(coordinates, [](float value) { return std::isfinite(value); });
 }
 

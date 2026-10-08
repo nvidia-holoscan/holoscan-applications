@@ -27,7 +27,7 @@ variants, and GXF recording formats are outside this first application.
   `holoscan::visualization::op_holoviz` and `<holoscan/visualization/holoviz_op.hpp>`.
 - CMake 4.0+, a C++20 compiler, CUDA toolkit, and TensorRT 10 development libraries
   (`nvinfer`, `nvinfer_plugin`, `nvonnxparser`).
-- Python 3.11–3.13 and the CLI pinned in the repository's
+- Python 3.12–3.14 and the CLI pinned in the repository's
   [requirements.txt](../../requirements.txt) for repository workflows.
 - FFmpeg for the one-time video conversion.
 

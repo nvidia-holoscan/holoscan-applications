@@ -19,16 +19,18 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <holoscan/core/payload_options.hpp>
-#include <holoscan/core/tensor_output_loan.hpp>
-#include <holoscan/logger/logger.hpp>
 #include <iterator>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <holoscan/core/payload_options.hpp>
+#include <holoscan/core/tensor_output_loan.hpp>
+#include <holoscan/logger/logger.hpp>
 
 namespace endoscopy_tool_tracking {
 namespace {

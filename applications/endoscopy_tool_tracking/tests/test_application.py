@@ -9,9 +9,7 @@ import tempfile
 import unittest
 
 
-@unittest.skipUnless(
-    os.environ.get("ENDOSCOPY_EXECUTABLE"), "requires the built application"
-)
+@unittest.skipUnless(os.environ.get("ENDOSCOPY_EXECUTABLE"), "requires the built application")
 class ApplicationTest(unittest.TestCase):
     def run_app(self, *args):
         return subprocess.run(
@@ -62,9 +60,7 @@ class ApplicationTest(unittest.TestCase):
             self.assertEqual(len(data), 5 * 8 * 6 * 3)
             for frame in range(5):
                 offset = frame * 144
-                self.assertEqual(
-                    int.from_bytes(data[offset : offset + 4], "little"), frame
-                )
+                self.assertEqual(int.from_bytes(data[offset : offset + 4], "little"), frame)
                 self.assertEqual(data[offset + 4], (4 + frame * 17) % 256)
             result = self.run_app(
                 "--data",
@@ -155,18 +151,12 @@ class ApplicationTest(unittest.TestCase):
             )
             result = self.run_app(*args)
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-            result = self.run_app(
-                *args, "--repeat", "true", "--record-dir", root / "record"
-            )
+            result = self.run_app(*args, "--repeat", "true", "--record-dir", root / "record")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(
-                (root / "record" / "input.rgb").read_bytes(), bytes(range(144)) * 3
-            )
+            self.assertEqual((root / "record" / "input.rgb").read_bytes(), bytes(range(144)) * 3)
 
     def test_zero_synthetic_count_rejected(self):
-        result = self.run_app(
-            "--synthetic", "true", "--inference", "false", "--count", "0"
-        )
+        result = self.run_app("--synthetic", "true", "--inference", "false", "--count", "0")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
 
 

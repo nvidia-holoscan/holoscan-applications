@@ -1,12 +1,18 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Compile this translation unit instead of tool_tracking_postprocessor_v5.cu so
-// the regression exercises the exact application kernel without a test-only API.
+#include <cuda_runtime_api.h>
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 
-#include "../cpp/tool_tracking_postprocessor_v5.cu"
+// Compile this translation unit instead of tool_tracking_postprocessor_v5.cu so
+// the regression exercises the exact application kernel without a test-only API.
+#include "../cpp/tool_tracking_postprocessor_v5.cu"  // NOLINT(build/include)
 
 int main() {
   float* probabilities{};

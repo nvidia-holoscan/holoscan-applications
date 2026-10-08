@@ -4,14 +4,15 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <string>
+#include <utility>
+
 #include <holoscan/core/operator.hpp>
 #include <holoscan/core/operator_spec.hpp>
 #include <holoscan/core/parameter_schema.hpp>
 #include <holoscan/core/temporal_contract.hpp>
 #include <holoscan/core/tensor_contract.hpp>
-#include <memory>
-#include <string>
-#include <utility>
 
 #include "run_progress.hpp"
 #include "video_stream_replayer.hpp"

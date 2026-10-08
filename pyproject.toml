@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[tool.ruff]
+# Match the oldest Python version supported by the repository workflows.
+target-version = "py312"
+# Keep Python formatting consistent with ClangFormat and cpplint.
+line-length = 100
+# Exclude generated directories without hiding files such as build_helpers.py.
+extend-exclude = ["build", "build-*", "install", "install-*", "data", "Testing", ".nv"]
+
+[tool.ruff.lint]
+# Extend the defaults with import ordering, Python upgrades, and Bugbear rules.
+extend-select = ["I", "UP", "B"]

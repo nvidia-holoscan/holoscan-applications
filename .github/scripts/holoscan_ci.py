@@ -18,9 +18,7 @@ class DiscoveryError(ValueError):
 
 def plan_commands(discovery: object, *, execute: bool = False) -> list[list[str]]:
     """Plan local lifecycle commands; project execution requires explicit opt-in."""
-    if not isinstance(discovery, dict) or not isinstance(
-        discovery.get("projects"), list
-    ):
+    if not isinstance(discovery, dict) or not isinstance(discovery.get("projects"), list):
         raise DiscoveryError("discovery must contain a projects list")
 
     aliases = {"C++": "cpp", "cpp": "cpp", "Python": "python", "python": "python"}

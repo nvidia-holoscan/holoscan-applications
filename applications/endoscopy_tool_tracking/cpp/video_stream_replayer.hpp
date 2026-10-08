@@ -24,6 +24,11 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
 #include <holoscan/core/domain/tensor.hpp>
 #include <holoscan/core/errors.hpp>
 #include <holoscan/core/execution_context.hpp>
@@ -38,10 +43,6 @@
 #include <holoscan/core/tensor_contract.hpp>
 #include <holoscan/core/tensor_output_loan.hpp>
 #include <holoscan/sensor_io/sensor_schema_package.hpp>
-#include <limits>
-#include <stdexcept>
-#include <string>
-#include <utility>
 
 namespace endoscopy_tool_tracking {
 

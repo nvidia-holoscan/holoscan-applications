@@ -1,15 +1,28 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <cuda_runtime_api.h>
+#include <unistd.h>
+
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <vector>
+
 // Exercise the production cache code in the same translation unit, keeping its
 // implementation details private to the application.
-#include <cstdio>
-#include <iostream>
-
-#include "../cpp/lstm_inference_v5.cpp"
+#include "../cpp/lstm_inference_v5.cpp"  // NOLINT(build/include)
 
 int main() {
-  using namespace endoscopy_tool_tracking;
+  using endoscopy_tool_tracking::cache_filename;
+  using endoscopy_tool_tracking::LstmInferenceParams;
+  using endoscopy_tool_tracking::read_binary;
+  using endoscopy_tool_tracking::write_binary;
   auto require = [](bool condition, const char* message) {
     if (!condition) {
       throw std::runtime_error(message);

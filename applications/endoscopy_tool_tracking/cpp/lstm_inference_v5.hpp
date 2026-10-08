@@ -9,6 +9,9 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
+#include <string>
+
 #include <holoscan/core/domain/tensor.hpp>
 #include <holoscan/core/errors.hpp>
 #include <holoscan/core/execution_context.hpp>
@@ -18,8 +21,6 @@
 #include <holoscan/core/port.hpp>
 #include <holoscan/core/temporal_contract.hpp>
 #include <holoscan/core/tensor_contract.hpp>
-#include <memory>
-#include <string>
 
 #include "video_preprocessor.hpp"
 

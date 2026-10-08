@@ -49,9 +49,7 @@ def parse_arguments(arguments: list[str] | None = None) -> argparse.Namespace:
             "the model plus a contiguous 854x480 RGB24 video stream."
         )
     )
-    parser.add_argument(
-        "--output", type=Path, required=True, help="destination directory"
-    )
+    parser.add_argument("--output", type=Path, required=True, help="destination directory")
     parser.add_argument(
         "--archive",
         type=Path,
@@ -181,13 +179,9 @@ def convert_video(source: Path, destination: Path, frames: int) -> None:
 
     result = subprocess.run(command, check=False)
     if result.returncode != 0:
-        raise PreparationError(
-            f"ffmpeg conversion failed with exit code {result.returncode}"
-        )
+        raise PreparationError(f"ffmpeg conversion failed with exit code {result.returncode}")
     if not valid_rgb_video(destination):
-        raise PreparationError(
-            "ffmpeg produced an empty or incomplete RGB24 frame stream"
-        )
+        raise PreparationError("ffmpeg produced an empty or incomplete RGB24 frame stream")
     if frames and destination.stat().st_size > frames * FRAME_BYTES:
         raise PreparationError("ffmpeg produced more frames than requested")
 

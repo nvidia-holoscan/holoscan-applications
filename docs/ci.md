@@ -7,7 +7,7 @@ the workflow or CI driver.
 
 The `CI` workflow runs on pull requests, pushes to `main`, and manual dispatch.
 Hosted jobs run the shared driver tests, CLI lifecycle contract checks, and
-application tests without SDK dependencies on Python 3.11, 3.12, and 3.13. Lint
+application tests without SDK dependencies on Python 3.12, 3.13, and 3.14. Lint
 (including metadata, license markers, and internal references) runs once.
 Separate jobs validate the workflow, build the repository tooling Dockerfile,
 and check local documentation links. New PR commits cancel older PR runs.
@@ -37,7 +37,7 @@ coverage of any private or externally managed CI.
 | --- | --- | --- |
 | Added hosted application tests | Runs CTest with all applications selected and both language scopes disabled; endoscopy's data-preparation regressions run with fixtures. | Existing CI only tested the driver and constructed application commands. |
 | Moved CPU test registration | Registers SDK-free tests outside the C++/CUDA dependency scope, in the owning application. | SDK-free tests were unreachable without configuring the SDK and compiler. |
-| Added Python 3.11–3.13 matrix | Tests the driver, installed CLI contract, and CPU tests across the application's documented Python versions. | Only Python 3.12 was checked; Holohub also checks multiple Python versions. |
+| Added Python 3.12–3.14 matrix | Tests the driver, installed CLI contract, and CPU tests across the application's documented Python versions. | Only Python 3.12 was checked; Holohub also checks multiple Python versions. |
 | Added SDK execution job and `--execute` | On configured `main` runs, builds applications, runs finite `ci` modes, and executes their CTest suites on a GPU runner. | Dry runs cannot catch compiler, linker, runtime, or CUDA regressions. |
 | Added zero-test failure and diagnostics | Fails executable test runs that discover no tests; uploads CTest output and SDK logs even after failure. | Empty green runs and lost diagnostics hide missing coverage and failures. |
 | Added Docker build | Builds the actual repository Dockerfile on a small Python base; its existing CLI version check validates installation. | Dependency installation and Dockerfile regressions were unchecked. This does not validate an SDK image. |
@@ -205,6 +205,32 @@ dataset download, performance benchmark, release packaging, or hardware-device
 integration is implied by the SDK job.
 
 ## Developer commands
+
+`holoscan lint` runs the same pre-commit configuration locally and in CI:
+
+- Ruff checks Python errors, import ordering, modernization, and Bugbear rules,
+  then formats Python files. `pyproject.toml` extends Ruff's default rules,
+  targets Python 3.12 (the oldest supported workflow version), and uses a
+  100-column formatting target to match ClangFormat and cpplint.
+- ClangFormat applies `.clang-format` to C, C++, and CUDA files; cpplint retains
+  the existing C/C++ checks. CMake files use the upstream cmakelint hook.
+- markdownlint-cli2 checks and fixes Markdown using `.markdownlint-cli2.yaml` and
+  honors `.gitignore`. Its Node.js runtime is pinned and installed by pre-commit.
+- File checks catch malformed JSON/YAML/TOML, merge conflicts, case collisions,
+  broken symlinks, Python debug statements, private keys, and files over 1 MiB.
+  Whitespace fixes preserve Markdown hard breaks and normalize line endings.
+- Repository hooks check SPDX identifiers, internal staging references, and
+  Holoscan metadata using `check_spdx.py`, `check_internal_artifacts.py`, and
+  `validate_metadata.py` in `.github/scripts/`. Each script accepts filenames
+  as arguments and can also be run directly from the repository root. Metadata
+  validation uses the CLI and `jsonschema` from `requirements.txt`; the hooks
+  require no SDK or GPU. Their regression tests run with the shared driver tests.
+
+Hook repositories use immutable commit revisions with release labels. To update
+them, run `pre-commit autoupdate --freeze`, review the changes, and run
+`holoscan lint`. Review the separately pinned Node.js runtime when updating
+markdownlint-cli2. Formatters may update files; review those edits before staging.
+Use `pre-commit install` to run the checks automatically when committing.
 
 Install the repository tools:
 

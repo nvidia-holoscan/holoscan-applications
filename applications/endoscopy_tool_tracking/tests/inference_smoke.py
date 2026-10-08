@@ -35,8 +35,7 @@ def main():
             )
             if (
                 completed.returncode
-                or "consumed=3 tracked=3 inference=on verdict=PASS"
-                not in completed.stdout
+                or "consumed=3 tracked=3 inference=on verdict=PASS" not in completed.stdout
             ):
                 raise AssertionError(completed.stdout + completed.stderr)
 

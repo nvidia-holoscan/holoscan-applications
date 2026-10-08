@@ -74,9 +74,7 @@ class PrepareDataTest(unittest.TestCase):
 
     def _run(self, *arguments: object) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
-        environment["PATH"] = os.pathsep.join(
-            (str(self.bin_dir), environment.get("PATH", ""))
-        )
+        environment["PATH"] = os.pathsep.join((str(self.bin_dir), environment.get("PATH", "")))
         return subprocess.run(
             [sys.executable, str(SCRIPT), *(str(argument) for argument in arguments)],
             cwd=APP_DIR,
@@ -95,9 +93,7 @@ class PrepareDataTest(unittest.TestCase):
         result = self._run("--archive", archive, "--output", output, "--frames", 1)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            (output / "tool_loc_convlstm.onnx").read_bytes(), b"onnx fixture"
-        )
+        self.assertEqual((output / "tool_loc_convlstm.onnx").read_bytes(), b"onnx fixture")
         rgb = (output / "surgical_video.rgb").read_bytes()
         self.assertEqual(len(rgb), FRAME_BYTES)
         self.assertEqual(rgb[:1], b"R")
@@ -131,9 +127,7 @@ class PrepareDataTest(unittest.TestCase):
                 archive = self._write_archive(members=members, name=f"{case}.zip")
                 output = self.root / case
 
-                result = self._run(
-                    "--archive", archive, "--output", output, "--frames", 1
-                )
+                result = self._run("--archive", archive, "--output", output, "--frames", 1)
 
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((output / "tool_loc_convlstm.onnx").exists())
@@ -163,9 +157,7 @@ class PrepareDataTest(unittest.TestCase):
         video.write_bytes(b"E" * FRAME_BYTES)
         self._write_fake_ffmpeg(fail=True)
 
-        result = self._run(
-            "--archive", archive, "--output", output, "--frames", 1, "--force"
-        )
+        result = self._run("--archive", archive, "--output", output, "--frames", 1, "--force")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ffmpeg", result.stderr)
