@@ -23,9 +23,9 @@ This repository holds applications: end-to-end pipelines that each own their sou
 custom operators, tests, and data preparation. Other contributions have a different
 home:
 
-- Tutorials go to [Holoscan Tutorials](https://github.com/nvidia-holoscan/holoscan-tutorials).
-- Benchmarks and measurement tools go to
-  [Holoscan Benchmarks](https://github.com/nvidia-holoscan/holoscan-benchmarks).
+- Tutorials go to Holoscan Tutorials (`nvidia-holoscan/holoscan-tutorials`).
+- Benchmarks and measurement tools go to Holoscan Benchmarks
+  (`nvidia-holoscan/holoscan-benchmarks`).
 - Operators and Holoscan Modules meant for reuse across applications go to
   [HoloHub](https://github.com/nvidia-holoscan/holohub).
 - Holoscan CLI changes and the metadata schema go to
