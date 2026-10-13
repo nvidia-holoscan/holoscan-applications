@@ -27,7 +27,7 @@ home:
 - Benchmarks and measurement tools go to Holoscan Benchmarks
   (`nvidia-holoscan/holoscan-benchmarks`).
 - Operators and Holoscan Modules meant for reuse across applications go to
-  [HoloHub](https://github.com/nvidia-holoscan/holohub).
+  their own project repositories. See the [Create a Module tutorial](https://nvidia-holoscan.github.io/holohub/tutorials/holoscan-modules/create-a-module/).
 - Holoscan CLI changes and the metadata schema go to
   [Holoscan CLI](https://github.com/nvidia-holoscan/holoscan-cli).
 - SDK bugs and feature requests go to the
