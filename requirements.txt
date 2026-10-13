@@ -1,4 +1,5 @@
-# Repository tooling. The alpha CLI wheel is published on pypi.nvidia.com.
-holoscan-cli==5.0.0a2
+# Fetch the alpha CLI from its pinned NVIDIA wheel without adding a second index.
+# Other packages and their dependencies resolve from the default PyPI index.
+holoscan-cli @ https://pypi.nvidia.com/holoscan-cli/holoscan_cli-5.0.0a2-py3-none-any.whl#sha256=3a52421904842d515883d0a50478adde011ba07fd1f677214a1755f0a755eb45
 pre-commit==4.6.2
 jsonschema>=4.18,<5

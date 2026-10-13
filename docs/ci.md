@@ -254,9 +254,11 @@ Install the repository tools:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --extra-index-url https://pypi.nvidia.com \
-  -r .github/requirements-ci.txt
+python -m pip install -r .github/requirements-ci.txt
 ```
+
+The requirements pin the alpha CLI to a NVIDIA wheel URL and SHA-256 digest.
+All other packages resolve from the default PyPI index; no extra index is needed.
 
 Run the same checks as hosted CI from the repository root:
 

@@ -60,9 +60,10 @@ The principal security boundaries are:
    during build, test, or runtime and could access host files, devices, GPU
    memory, credentials, or networks available to those processes.
 2. **Build dependency substitution:** `Dockerfile` accepts a caller-provided
-   `BASE_IMAGE`, and Python installation uses both the default package index and
-   `pypi.nvidia.com`. An untrusted image, compromised index, or package-name
-   collision could introduce code during container or CI builds.
+   `BASE_IMAGE`. Repository tooling pins the CLI to a NVIDIA wheel URL and
+   SHA-256 digest; other Python dependencies use the default PyPI index. An
+   untrusted image or compromised dependency source could introduce code during
+   container or CI builds.
 3. **CI and lint supply-chain compromise:** GitHub Actions and remote pre-commit
    hooks execute third-party code selected by version tags. A compromised
    upstream release or mutable tag could affect CI runners and developer
