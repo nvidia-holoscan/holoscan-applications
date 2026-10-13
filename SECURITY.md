@@ -32,10 +32,10 @@ support depends on the Holoscan SDK versions declared in each application's
 Holoscan Applications is a collection and build framework for accelerated
 computing, streaming, and AI applications built with the NVIDIA Holoscan SDK.
 The repository-level code discovers applications, registers CMake projects, and
-uses the Holoscan CLI to build, run, test, and lint them. The current repository
-registers the [Endoscopy Tool Tracking](applications/endoscopy_tool_tracking/README.md)
-application, implemented in C++/CUDA with RGB24 replay, TensorRT inference,
-optional visualization, and input recording.
+uses the Holoscan CLI to build, run, test, and lint them. The repository contains
+shared build tooling and application implementations under `applications/`.
+This policy covers the repository as a whole; application-specific security
+requirements and deployment assumptions belong in each application's documentation.
 
 This project operates at the application and build-tooling level. Its primary
 security responsibility is to preserve the integrity of application source,
@@ -69,19 +69,14 @@ The principal security boundaries are:
    hooks execute third-party code selected by version tags. A compromised
    upstream release or mutable tag could affect CI runners and developer
    workstations.
-4. **Unsafe application-specific inputs:** Endoscopy consumes ONNX models,
-   TensorRT engine caches, and RGB24 video files. TensorRT parses ONNX when
-   building an engine and deserializes cached engines before the application's
-   compatibility checks. The cache key includes a non-cryptographic model
-   fingerprint, GPU, TensorRT version, precision, and workspace settings;
-   neither cache identity nor compatibility checks authenticate provenance.
-5. **Sample downloads and video parsing:** Endoscopy's `prepare_data.py`
-   downloads the NGC sample ZIP at version `20230222` over HTTPS or reads a local
-   `--archive`. It extracts the ONNX model and H.264 video and invokes FFmpeg to
-   convert the video to RGB24. Selected ZIP member paths, nonempty assets, and
-   RGB frame sizes are checked, but the script does not verify a trusted
-   cryptographic checksum or signature to authenticate the model or video.
-6. **Resource exhaustion and unsafe device access:** Applications can perform
+4. **Unsafe application-specific inputs:** Applications may consume datasets,
+   device streams, model files, cached artifacts, media, archives, or
+   external-service responses. Parsers, deserializers, and preprocessing tools
+   operate on these inputs with the application's privileges. The repository
+   framework does not centrally authenticate, validate, or constrain those
+   inputs; each application is responsible for validating its inputs and
+   establishing artifact provenance.
+5. **Resource exhaustion and unsafe device access:** Applications can perform
    GPU-intensive processing and interact with attached hardware. Unbounded
    inputs or incorrect device configuration could exhaust CPU, GPU, memory, or
    storage resources, or interfere with other workloads sharing the host.
@@ -96,11 +91,10 @@ The principal security boundaries are:
   repositories are trusted and retrieved over authenticated TLS.
 - The host OS, container runtime, GPU driver, Holoscan SDK, and hardware enforce
   process, device, and memory isolation appropriate to the deployment.
-- Operators provide model, video, and cached engine artifacts from trusted
-  sources and restrict write access to model/data and engine-cache locations.
-  Endoscopy writes prepared assets, engine caches, and optional RGB recordings
-  to operator-selected locations using the process's filesystem permissions;
-  operators must also control access to preparation and recording destinations.
+- Each application documents its trust boundaries, input validation, external
+  dependencies, and required permissions in its own documentation.
+- Operators obtain data, models, and cached artifacts from trusted sources and
+  restrict write access to input, cache, and output locations.
 - Secrets are supplied through deployment-specific secret management and are
   not committed to the repository, embedded in metadata, or copied into build
   contexts.
