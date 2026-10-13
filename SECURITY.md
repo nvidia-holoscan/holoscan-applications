@@ -32,10 +32,8 @@ support depends on the Holoscan SDK versions declared in each application's
 Holoscan Applications is a collection and build framework for accelerated
 computing, streaming, and AI applications built with the NVIDIA Holoscan SDK.
 The repository-level code discovers applications, registers CMake projects, and
-uses the Holoscan CLI to build, run, test, and lint them. The repository contains
-shared build tooling and application implementations under `applications/`.
-This policy covers the repository as a whole; application-specific security
-requirements and deployment assumptions belong in each application's documentation.
+uses the Holoscan CLI to build, run, test, and lint them. The current repository
+contains the framework and application implementations under `applications/`.
 
 This project operates at the application and build-tooling level. Its primary
 security responsibility is to preserve the integrity of application source,
@@ -69,13 +67,11 @@ The principal security boundaries are:
    hooks execute third-party code selected by version tags. A compromised
    upstream release or mutable tag could affect CI runners and developer
    workstations.
-4. **Unsafe application-specific inputs:** Applications may consume datasets,
-   device streams, model files, cached artifacts, media, archives, or
-   external-service responses. Parsers, deserializers, and preprocessing tools
-   operate on these inputs with the application's privileges. The repository
-   framework does not centrally authenticate, validate, or constrain those
-   inputs; each application is responsible for validating its inputs and
-   establishing artifact provenance.
+4. **Unsafe application-specific inputs:** Applications may consume
+   datasets, device streams, model files, or external-service responses. The
+   repository framework does not centrally authenticate, validate, or constrain
+   those inputs, so malformed or adversarial data must be handled by each
+   application and its dependencies.
 5. **Resource exhaustion and unsafe device access:** Applications can perform
    GPU-intensive processing and interact with attached hardware. Unbounded
    inputs or incorrect device configuration could exhaust CPU, GPU, memory, or
@@ -91,10 +87,8 @@ The principal security boundaries are:
   repositories are trusted and retrieved over authenticated TLS.
 - The host OS, container runtime, GPU driver, Holoscan SDK, and hardware enforce
   process, device, and memory isolation appropriate to the deployment.
-- Each application documents its trust boundaries, input validation, external
-  dependencies, and required permissions in its own documentation.
-- Operators obtain data, models, and cached artifacts from trusted sources and
-  restrict write access to input, cache, and output locations.
+- Each application validates its own files, datasets, network messages, device
+  data, model artifacts, and configuration before use.
 - Secrets are supplied through deployment-specific secret management and are
   not committed to the repository, embedded in metadata, or copied into build
   contexts.
