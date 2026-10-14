@@ -12,14 +12,10 @@ together.
 
 ## Choose an application
 
-Browse [applications](applications/). Start with
-[Endoscopy Tool Tracking](applications/endoscopy_tool_tracking/README.md)
-to replay surgical video and track tools using TensorRT inference, with optional
-visualization.
-
+Browse [applications](applications/) to find a workflow that matches your needs.
 Read the selected application's README and `metadata.json` for supported SDK
-versions, hardware, dependencies, and data preparation. Requirements vary by
-application; Endoscopy Tool Tracking currently requires Holoscan SDK 5.x.
+versions, platforms, hardware, dependencies, and data preparation. Requirements
+vary by application.
 
 ## Getting started
 
@@ -33,11 +29,16 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --extra-index-url https://pypi.nvidia.com "holoscan-cli==5.0.0a2"
 holoscan list
-holoscan modes endoscopy_tool_tracking
 ```
 
 The [Holoscan CLI](https://github.com/nvidia-holoscan/holoscan-cli) discovers
 applications in your checkout and provides build, run, and test commands.
+Choose a name from `holoscan list` and inspect its modes:
+
+```bash
+holoscan modes <application>
+```
+
 Prepare the selected application's SDK environment and data before running it.
 For SDK setup, see the
 [installation guide](https://docs.nvidia.com/holoscan/sdk-user-guide/setup/sdk-installation)
