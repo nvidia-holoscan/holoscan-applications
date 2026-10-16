@@ -19,16 +19,24 @@ vary by application.
 
 ## Getting started
 
-Clone the repository and install its required Holoscan CLI release from
-NVIDIA's package index. Use Python 3.12–3.14; this example uses Python 3.12:
+Clone the repository and install its tools with [uv](https://docs.astral.sh/uv/).
+`pyproject.toml` sets the Holoscan CLI release, NVIDIA's package index, and
+Python 3.12 or newer, so `uv sync` needs no extra options:
 
 ```bash
 git clone https://github.com/nvidia-holoscan/holoscan-applications.git
 cd holoscan-applications
+uv sync
+source .venv/bin/activate
+holoscan list
+```
+
+To use pip instead, install `requirements.txt` with Python 3.12–3.14:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install --extra-index-url https://pypi.nvidia.com "holoscan-cli==5.0.0rc2"
-holoscan list
+python -m pip install --extra-index-url https://pypi.nvidia.com -r requirements.txt
 ```
 
 The [Holoscan CLI](https://github.com/nvidia-holoscan/holoscan-cli) discovers

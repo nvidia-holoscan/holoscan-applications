@@ -1,6 +1,29 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Repository tooling for `uv sync`. CI and the tooling image install the same
+# pins with pip from requirements.txt; keep the two lists in sync.
+[project]
+name = "holoscan-applications"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = [
+    "holoscan-cli==5.0.0rc2",
+    "pre-commit==4.6.2",
+    "jsonschema>=4.18,<5",
+]
+
+# Install the CLI only from NVIDIA's package index.
+[tool.uv.sources]
+holoscan-cli = { index = "nvidia" }
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
 [tool.ruff]
 # Match the oldest Python version supported by the repository workflows.
 target-version = "py312"

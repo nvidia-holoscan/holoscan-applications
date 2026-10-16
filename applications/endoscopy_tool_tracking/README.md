@@ -62,11 +62,12 @@ NGC resource; they are downloaded separately from this source repository.
 
 ## Build and run
 
-Install the pinned CLI and select your SDK installation and matching development
-image once per shell:
+From the repository root, install the pinned CLI and select your SDK installation
+and matching development image once per shell:
 
 ```bash
-uv tool install --python 3.12 --index https://pypi.nvidia.com holoscan-cli==5.0.0rc2
+uv sync
+source .venv/bin/activate
 export HOLOSCAN_SDK_ROOT=/path/to/holoscan-sdk/install-endoscopy-5x
 export HOLOSCAN_CLI_BASE_IMAGE=holoscan-sdk-build-aarch64:main-5x
 ```
