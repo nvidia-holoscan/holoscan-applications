@@ -27,7 +27,7 @@ git clone https://github.com/nvidia-holoscan/holoscan-applications.git
 cd holoscan-applications
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install --extra-index-url https://pypi.nvidia.com "holoscan-cli==5.0.0rc1"
+python -m pip install --extra-index-url https://pypi.nvidia.com "holoscan-cli==5.0.0rc2"
 holoscan list
 ```
 
