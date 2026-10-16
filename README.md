@@ -21,7 +21,7 @@ vary by application.
 
 Clone the repository and install its tools with [uv](https://docs.astral.sh/uv/).
 `pyproject.toml` sets the Holoscan CLI release, NVIDIA's package index, and
-Python 3.12 or newer, so `uv sync` needs no extra options:
+Python 3.12–3.14, so `uv sync` needs no extra options:
 
 ```bash
 git clone https://github.com/nvidia-holoscan/holoscan-applications.git
