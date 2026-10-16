@@ -20,14 +20,14 @@ vary by application.
 ## Getting started
 
 Clone the repository and install its required Holoscan CLI release from
-NVIDIA's package index. Use Python 3.12–3.14; this example uses Python 3.12:
+PyPI. Use Python 3.12–3.14; this example uses Python 3.12:
 
 ```bash
 git clone https://github.com/nvidia-holoscan/holoscan-applications.git
 cd holoscan-applications
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install --extra-index-url https://pypi.nvidia.com "holoscan-cli==5.0.0rc1"
+python -m pip install "holoscan-cli==5.0.0"
 holoscan list
 ```
 
@@ -73,17 +73,18 @@ setup, standalone build instructions, and tests. Where tests are configured,
 run `holoscan test <application> --local` in the required environment.
 Use `holoscan <command> --help` for more options.
 
-## Learn more and contribute
+## Learn more
 
 See [Holoscan Tutorials](https://github.com/nvidia-holoscan/holoscan-tutorials)
 for development walkthroughs and [Holoscan Benchmarks](https://github.com/nvidia-holoscan/holoscan-benchmarks)
 to measure performance.
 
-To contribute, keep an application's source, metadata, README, and tests
-together under `applications/<name>/`. Document its requirements, data setup,
-and build and run instructions, then open a pull request in this repository.
-Sign commits with `git commit -s` to certify the
-[Developer Certificate of Origin](https://developercertificate.org/).
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for application layout, development setup,
+testing, and pull request requirements.
+
+## License
 
 Code is licensed under [Apache 2.0](LICENSE). Separately downloaded models and
 datasets have their own terms, linked from each application's documentation.

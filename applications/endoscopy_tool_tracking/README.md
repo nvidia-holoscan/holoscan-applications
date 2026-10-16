@@ -66,7 +66,7 @@ Install the pinned CLI and select your SDK installation and matching development
 image once per shell:
 
 ```bash
-uv tool install --python 3.12 --index https://pypi.nvidia.com holoscan-cli==5.0.0rc1
+uv tool install --python 3.12 holoscan-cli==5.0.0
 export HOLOSCAN_SDK_ROOT=/path/to/holoscan-sdk/install-endoscopy-5x
 export HOLOSCAN_CLI_BASE_IMAGE=holoscan-sdk-build-aarch64:main-5x
 ```
