@@ -81,17 +81,18 @@ setup, standalone build instructions, and tests. Where tests are configured,
 run `holoscan test <application> --local` in the required environment.
 Use `holoscan <command> --help` for more options.
 
-## Learn more and contribute
+## Learn more
 
 See [Holoscan Tutorials](https://github.com/nvidia-holoscan/holoscan-tutorials)
 for development walkthroughs and [Holoscan Benchmarks](https://github.com/nvidia-holoscan/holoscan-benchmarks)
 to measure performance.
 
-To contribute, keep an application's source, metadata, README, and tests
-together under `applications/<name>/`. Document its requirements, data setup,
-and build and run instructions, then open a pull request in this repository.
-Sign commits with `git commit -s` to certify the
-[Developer Certificate of Origin](https://developercertificate.org/).
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for application layout, development setup,
+testing, and pull request requirements.
+
+## License
 
 Code is licensed under [Apache 2.0](LICENSE). Separately downloaded models and
 datasets have their own terms, linked from each application's documentation.
