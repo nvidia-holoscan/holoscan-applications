@@ -254,7 +254,7 @@ Install the repository tools:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install \
+python -m pip install --extra-index-url https://pypi.nvidia.com \
   -r .github/requirements-ci.txt
 ```
 

@@ -10,5 +10,6 @@ FROM ${BASE_IMAGE}
 
 COPY requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --no-cache-dir \
+      --extra-index-url https://pypi.nvidia.com \
       -r /tmp/requirements.txt \
     && holoscan version

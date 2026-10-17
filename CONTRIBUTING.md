@@ -28,7 +28,7 @@ tools. This example uses Python 3.12:
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --extra-index-url https://pypi.nvidia.com -r requirements.txt
 holoscan lint
 ```
 
