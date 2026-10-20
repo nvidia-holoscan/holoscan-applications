@@ -20,19 +20,18 @@ datasets, or produce tested release artifacts. A separate SDK job performs
 build/run/test execution on `main` when compatible runners and an SDK image
 are configured. A skipped SDK job is not evidence of application correctness.
 
-## Comparison with Holohub main
+## Comparison with the former Holohub source collection
 
-Reviewed on 2026-10-07 against Holohub commit
-[`f9394a8`](https://github.com/nvidia-holoscan/holohub/tree/f9394a8de18c9ca4851ba6b270fe774d60965a2b).
-Its public workflows check CLI compatibility, Docker builds, lint, metadata,
-compliance, and links. Its
-[CLI CTest job](https://github.com/nvidia-holoscan/holohub/blob/f9394a8de18c9ca4851ba6b270fe774d60965a2b/.github/workflows/check_cli.yml)
-tests CLI integration; the
-[Docker job](https://github.com/nvidia-holoscan/holohub/blob/f9394a8de18c9ca4851ba6b270fe774d60965a2b/.github/workflows/check_docker.yml)
-builds tooling images. Neither establishes GPU application correctness. There
-are application CTest scripts in Holohub, but the public GitHub workflows do not
-invoke the all-application build/run script. This review does not establish the
-coverage of any private or externally managed CI.
+Reviewed on 2026-10-07 against the former Holohub source collection at
+commit `f9394a8de18c9ca4851ba6b270fe774d60965a2b`, now preserved on its
+`archive-4x` branch. Its public workflows checked CLI compatibility, Docker
+builds, lint, metadata, compliance, and links. Its CLI CTest job
+(`.github/workflows/check_cli.yml`) tested CLI integration; the Docker job
+(`.github/workflows/check_docker.yml`) built tooling images. Neither
+establishes GPU application correctness. There are application CTest scripts
+in that collection, but its public GitHub workflows do not invoke the
+all-application build/run script. This review does not establish the coverage
+of any private or externally managed CI.
 
 | Change here | What it does | Why |
 | --- | --- | --- |

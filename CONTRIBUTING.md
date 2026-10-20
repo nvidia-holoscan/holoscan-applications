@@ -14,7 +14,7 @@ operators, tests, and data preparation. Related contributions belong in:
 - [Holoscan Benchmarks](https://github.com/nvidia-holoscan/holoscan-benchmarks)
   for benchmarks and measurement tools.
 - Independent project repositories for reusable operators and Holoscan Modules;
-  see the [Create a Module tutorial](https://nvidia-holoscan.github.io/holohub/tutorials/holoscan-modules/create-a-module/).
+  see the [Create a Module tutorial](https://github.com/nvidia-holoscan/holoscan-tutorials/tree/main/tutorials/holoscan-modules/create-a-module).
 - [Holoscan CLI](https://github.com/nvidia-holoscan/holoscan-cli) for CLI changes
   and the metadata schema.
 - [Holoscan SDK issues](https://github.com/nvidia-holoscan/holoscan-sdk/issues)
