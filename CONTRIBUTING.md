@@ -46,7 +46,10 @@ documented in the application's README. See the repository
 
 Keep the application's source, custom operators, `metadata.json`, README, tests,
 and data-preparation scripts together under `applications/<name>/`.
-Use [Endoscopy Tool Tracking](applications/endoscopy_tool_tracking/) as an
+Start a new C++ application from the
+[application template](applications/template/) with
+`holoscan create <name> --template applications/template`, and use
+[Endoscopy Tool Tracking](applications/endoscopy_tool_tracking/) as a complete
 example of the repository conventions.
 
 - Describe supported SDK versions, platforms, hardware, dependencies, data
@@ -57,7 +60,9 @@ example of the repository conventions.
   and `holoscan modes <application>`.
 - Register new applications with `add_holoscan_application(<name>)` in
   [applications/CMakeLists.txt](applications/CMakeLists.txt), in alphabetical
-  order. Keep application-specific build logic in the application's directory.
+  order. holoscan-cli 5.0.0's `holoscan create` appends a registration line in
+  another format to that file; replace it. Keep application-specific build
+  logic in the application's directory.
 - Register tests through CTest. Keep SDK-free tests outside language-specific
   dependency scopes so hosted CI can run them. See the
   [hosted test conventions](docs/ci.md#application-tests-on-hosted-runners).

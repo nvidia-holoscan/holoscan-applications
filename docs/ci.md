@@ -164,6 +164,18 @@ require external datasets, attached devices, a display, or external services.
 Real-data, device, and longer integration tests belong in the application test
 suite and remain accessible through `holoscan test <application>`.
 
+## Application template
+
+`applications/template/` is a `holoscan create` template for new C++
+applications that follow these conventions; the CLI excludes it from
+discovery. The hosted unit tests (`test_application_template.py`) generate an
+application from it with the pinned CLI. They check its files, metadata,
+copyright headers, discovery, `ci` and test dry runs, and SDK-free CMake
+configuration once the application is registered in
+`applications/CMakeLists.txt`, and that the template rejects Python and SDKs
+older than 5.0.0.
+They do not compile the generated C++ code, which requires the SDK.
+
 ## SDK and GPU execution
 
 Configure these repository Actions variables to enable the SDK job:
@@ -228,6 +240,8 @@ integration is implied by the SDK job.
   as arguments and can also be run directly from the repository root. Metadata
   validation uses the CLI and `jsonschema` from `requirements.txt`; the hooks
   require no SDK or GPU. Their regression tests run with the shared driver tests.
+  The SPDX and metadata hooks skip the template's placeholder sources; the
+  template tests check a generated application instead.
 
 The SPDX hook requires an Apache-2.0 license identifier and a copyright notice
 with a holder and a valid year or year range. It accepts SPDX copyright notices

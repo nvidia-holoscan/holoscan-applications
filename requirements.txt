@@ -1,4 +1,5 @@
-# Repository tooling. The CLI wheel is distributed through PyPI.
-holoscan-cli==5.0.0
+# Repository tooling. The CLI wheel is distributed through PyPI; its create
+# extra supplies the template engine for applications/template.
+holoscan-cli[create]==5.0.0
 pre-commit==4.6.2
 jsonschema>=4.18,<5

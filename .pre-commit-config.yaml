@@ -79,6 +79,9 @@ repos:
         entry: python3 .github/scripts/check_copyright.py
         language: python
         files: '(^|/)(CMakeLists\.txt|Dockerfile)$|\.(c|cc|cpp|cu|cuh|h|hpp|py|cmake)$|^\.github/workflows/.*\.ya?ml$'
+        # Template sources hold placeholder years; test_application_template.py
+        # checks the headers of a generated application instead.
+        exclude: '^applications/template/\{\{cookiecutter\.project_slug\}\}/'
         types: [text]
 
       - id: internal-artifact-check
@@ -94,4 +97,6 @@ repos:
         # Use the CLI and jsonschema installed from requirements.txt.
         language: system
         files: '(^|/)metadata\.json$'
+        # Template metadata holds placeholders; holoscan create validates the result.
+        exclude: '^applications/template/\{\{cookiecutter\.project_slug\}\}/'
         types: [json]
