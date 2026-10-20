@@ -1,0 +1,47 @@
+{
+  "application": {
+    "name": "{{ cookiecutter.project_name }}",
+    "description": "{{ cookiecutter.description }}",
+    "authors": [
+      {
+        "name": "{{ cookiecutter.full_name }}",
+        "affiliation": "{{ cookiecutter.affiliation }}"
+      }
+    ],
+    "language": "C++",
+    "version": "{{ cookiecutter.version }}",
+    "changelog": {
+      "{{ cookiecutter.version }}": "Initial application generated from the repository template."
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "{{ cookiecutter.holoscan_version }}",
+      "tested_versions": [
+        "{{ cookiecutter.holoscan_version }}"
+      ]
+    },
+    "platforms": [
+      "x86_64",
+      "aarch64"
+    ],
+    "tags": [
+      "Example"
+    ],
+    "ranking": 4,
+    "requirements": {},
+    "default_mode": "default",
+    "modes": {
+      "default": {
+        "description": "Process 100 messages through the pipeline and verify every result.",
+        "run": {
+          "command": "./{{ cookiecutter.project_slug }} --count 100"
+        }
+      },
+      "ci": {
+        "description": "Finite headless check: process 10 messages without external data.",
+        "run": {
+          "command": "./{{ cookiecutter.project_slug }} --count 10 --period-ms 1"
+        }
+      }
+    }
+  }
+}
