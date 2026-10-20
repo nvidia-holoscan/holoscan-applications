@@ -3,10 +3,13 @@
 
 minimum_pre_commit_version: "4.6.2"
 default_stages: [pre-commit]
+# Skill signing generates BENCHMARK.md, skill-card.md, and skill.oms.sig, and
+# the signature records their digests. Keep hooks from rewriting them.
 exclude: >-
   (?x)(
     ^(build[^/]*|install[^/]*|data|Testing|\.cache|\.venv|\.nv)/
     |(^|/)__pycache__/
+    |^skills/[^/]+/(BENCHMARK\.md|skill-card\.md|skill\.oms\.sig)$
   )
 
 # Keep immutable revisions with readable release labels.
