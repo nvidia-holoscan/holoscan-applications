@@ -23,17 +23,22 @@ operators, tests, and data preparation. Related contributions belong in:
 ## Before you contribute an application
 
 Holoscan Applications accepts applications from NVIDIA teams and external
-contributors. The quality and maintenance bar is high, so you may prefer to
-develop and maintain your application in your own repository instead.
+contributors. We filter each contribution request on a case-by-case basis to
+consider ecosystem and business relations. When we choose to accept a
+contribution, we ask that the contributing team commits to maintaining a high
+software quality bar. In many or most cases we will recommend that you develop
+and maintain your application in a standalone repository instead.
 
-Contributing an application here means you:
+Contributing an application here means:
 
-- Have CI in place before your first contribution. NVIDIA teams coordinate
-  their application's SDK, GPU, and hardware needs with the maintainers before
-  opening a pull request. External contributors show that CI already builds and
-  tests the application, for example with passing runs in their own repository.
-- Maintain the application after it merges. Name its maintainers in the pull
-  request, and fix CI failures and SDK incompatibilities as they arise.
+- You have tests and continuous integration (CI) in place before your first
+  contribution. NVIDIA teams must coordinate their application's SDK, GPU, and
+  hardware needs with the maintainers before opening a pull request. External
+  contributors must show that CI already builds and tests the application, for
+  example with passing runs in their own repository.
+- You are responsible to maintain the application after it merges. Please name
+  its maintainers in the pull request, and fix CI failures and SDK
+  incompatibilities as they arise.
 
 Applications that are no longer maintained may be deprecated and removed at
 any time.
