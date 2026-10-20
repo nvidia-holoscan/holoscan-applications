@@ -16,8 +16,9 @@
     "full_name": "Author name",
     "affiliation": "Author affiliation",
     "copyright_holder": "Copyright holder for source headers",
-    "language": "Implementation language (cpp)",
+    "language": "Implementation language",
     "version": "Initial application version",
-    "holoscan_version": "Minimum Holoscan SDK version (5.0.0 or later)"
+    "holoscan_version": "Minimum Holoscan SDK version (5.0.0 or later)",
+    "year": "Copyright year"
   }
 }
