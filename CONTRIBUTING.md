@@ -20,6 +20,24 @@ operators, tests, and data preparation. Related contributions belong in:
 - [Holoscan SDK issues](https://github.com/nvidia-holoscan/holoscan-sdk/issues)
   for SDK bugs and feature requests.
 
+## Before you contribute an application
+
+Holoscan Applications accepts applications from NVIDIA teams and external
+contributors. The quality and maintenance bar is high, so you may prefer to
+develop and maintain your application in your own repository instead.
+
+Contributing an application here means you:
+
+- Have CI in place before your first contribution. NVIDIA teams coordinate
+  their application's SDK, GPU, and hardware needs with the maintainers before
+  opening a pull request. External contributors show that CI already builds and
+  tests the application, for example with passing runs in their own repository.
+- Maintain the application after it merges. Name its maintainers in the pull
+  request, and fix CI failures and SDK incompatibilities as they arise.
+
+Applications that are no longer maintained may be deprecated and removed at
+any time.
+
 ## Development setup
 
 From the repository root, use Python 3.12–3.14 to install the pinned repository
