@@ -6,15 +6,13 @@
 // App-level config smoke test. Loads the shipped applications/surgical_deidentification/config.yaml
 // and verifies each sub-section parses through the correct operator-side from_yaml_node() helper.
 
-#include <gtest/gtest.h>
-
 #include <filesystem>
 #include <string>
 
-#include <yaml-cpp/yaml.h>
-
+#include <gtest/gtest.h>
 #include <holoscan/operators/inference/inference.hpp>
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
+#include <yaml-cpp/yaml.h>
 
 #include "video_file_reader.hpp"
 
@@ -86,8 +84,7 @@ TEST_F(SurgicalDeIdConfigTest, VideoSourceSection_ParsesViaReaderYamlLoader) {
   // The shipped config references a dataset path that may not exist on this host; parse-only
   // check — no file I/O.
   EXPECT_NO_THROW({
-    const auto p =
-        holoscan::ops::VideoFileReaderOpParams::from_yaml_node(node, config_dir_);
+    const auto p = holoscan::ops::VideoFileReaderOpParams::from_yaml_node(node, config_dir_);
     EXPECT_FALSE(p.tensor_port_name.empty());
     EXPECT_FALSE(p.output_pix_fmt.empty());
     EXPECT_FALSE(p.output_layout.empty());
@@ -100,8 +97,7 @@ TEST_F(SurgicalDeIdConfigTest, PreprocessorSection_ParsesViaSdkYamlLoader) {
   const auto node = root_["preprocessor"];
   ASSERT_TRUE(node);
   EXPECT_NO_THROW({
-    const auto p =
-        holoscan::ops::TensorPreprocessorOpParams::from_yaml_node(node, config_dir_);
+    const auto p = holoscan::ops::TensorPreprocessorOpParams::from_yaml_node(node, config_dir_);
     EXPECT_GT(p.output_width, 0);
     EXPECT_GT(p.output_height, 0);
   });

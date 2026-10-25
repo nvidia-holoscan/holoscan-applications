@@ -6,12 +6,11 @@
 // Pure-CPU unit tests for VideoFileWriterOpParams::from_yaml_node().
 // Mirrors the SDK's test_yaml_config.cpp pattern — no Fragment, no CUDA, no FFmpeg runtime.
 
-#include <gtest/gtest.h>
-
 #include <filesystem>
 #include <fstream>
 #include <string>
 
+#include <gtest/gtest.h>
 #include <yaml-cpp/yaml.h>
 
 #include "video_file_writer.hpp"
@@ -51,19 +50,22 @@ height: 256
 TEST(VideoFileWriterYaml, MissingPath_Throws) {
   EXPECT_THROW(load(R"(width: 256
 height: 256
-)"), std::runtime_error);
+)"),
+               std::runtime_error);
 }
 
 TEST(VideoFileWriterYaml, MissingWidth_Throws) {
   EXPECT_THROW(load(R"(path: out.mp4
 height: 256
-)"), std::runtime_error);
+)"),
+               std::runtime_error);
 }
 
 TEST(VideoFileWriterYaml, MissingHeight_Throws) {
   EXPECT_THROW(load(R"(path: out.mp4
 width: 256
-)"), std::runtime_error);
+)"),
+               std::runtime_error);
 }
 
 // -------- Validation ---------------------------------------------------------------------
@@ -73,7 +75,8 @@ TEST(VideoFileWriterYaml, InvalidPixFmt_Throws) {
 width: 256
 height: 256
 input_pix_fmt: yuv420p
-)"), std::runtime_error);
+)"),
+               std::runtime_error);
 }
 
 TEST(VideoFileWriterYaml, InvalidLayout_Throws) {
@@ -81,7 +84,8 @@ TEST(VideoFileWriterYaml, InvalidLayout_Throws) {
 width: 256
 height: 256
 input_layout: hwcn
-)"), std::runtime_error);
+)"),
+               std::runtime_error);
 }
 
 // -------- Field round-trips --------------------------------------------------------------
@@ -124,7 +128,8 @@ TEST(VideoFileWriterYaml, RelativePath_ResolvesAgainstConfigDir) {
 path: output/out.mp4
 width: 128
 height: 128
-)", tmp);
+)",
+                      tmp);
   EXPECT_EQ(p.path.parent_path(), tmp / "output");
   EXPECT_EQ(p.path.filename(), "out.mp4");
   std::filesystem::remove_all(tmp);
@@ -135,7 +140,8 @@ TEST(VideoFileWriterYaml, AbsolutePath_LeftUnchanged) {
 path: /tmp/abs/out.mp4
 width: 128
 height: 128
-)", "/some/other/dir");
+)",
+                      "/some/other/dir");
   EXPECT_EQ(p.path, "/tmp/abs/out.mp4");
 }
 

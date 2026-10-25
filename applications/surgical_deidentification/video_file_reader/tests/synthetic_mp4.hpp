@@ -31,8 +31,8 @@ namespace surgical_deid::test {
 /// which is a separate build-time dep).
 ///
 /// @throws std::runtime_error on any libav failure, with a descriptive message.
-inline void encode_synthetic_mp4(const std::string& path, int width, int height,
-                                  int frame_count, int fps = 25) {
+inline void encode_synthetic_mp4(const std::string& path, int width, int height, int frame_count,
+                                 int fps = 25) {
   if (width <= 0 || height <= 0 || frame_count <= 0 || fps <= 0) {
     throw std::runtime_error("encode_synthetic_mp4: non-positive dimension or count");
   }

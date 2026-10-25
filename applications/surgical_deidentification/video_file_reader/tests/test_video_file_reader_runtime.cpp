@@ -5,7 +5,7 @@
 
 // Runtime / functional test for VideoFileReaderOp::compute().
 
-#include <gtest/gtest.h>
+#include <cuda_runtime_api.h>
 
 #include <atomic>
 #include <chrono>
@@ -17,9 +17,8 @@
 #include <utility>
 #include <vector>
 
-#include <cuda_runtime_api.h>
 #include <dlpack/dlpack.h>
-
+#include <gtest/gtest.h>
 #include <holoscan/core/compile.hpp>
 #include <holoscan/core/connection_options.hpp>
 #include <holoscan/core/domain/tensor.hpp>
@@ -76,9 +75,10 @@ class TensorRecorder final : public holoscan::Operator<> {
     spec.input(input, "input")
         .queue_depth(4U)
         .expects_tensor(holoscan::TensorInputSpec{
-            .representation = holoscan::TensorRepresentation{
-                .memory_kind = holoscan::MemoryKind::kCudaDevice,
-            },
+            .representation =
+                holoscan::TensorRepresentation{
+                    .memory_kind = holoscan::MemoryKind::kCudaDevice,
+                },
         });
   }
   [[nodiscard]] holoscan::Contract contract() const override {
@@ -100,9 +100,8 @@ class TensorRecorder final : public holoscan::Operator<> {
 };
 
 [[nodiscard]] bool run_reader_pipeline(const VideoFileReaderOpParams& params,
-                                        std::size_t expected_frames,
-                                        std::chrono::seconds timeout,
-                                        std::string& err) {
+                                       std::size_t expected_frames, std::chrono::seconds timeout,
+                                       std::string& err) {
   SinkObservation::reset();
   try {
     holoscan::Graph graph{"video-file-reader-runtime-test"};
@@ -154,8 +153,8 @@ class VideoFileReaderRuntimeTest : public ::testing::Test {
                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(tmp_dir_);
     mp4_path_ = tmp_dir_ / "synthetic.mp4";
-    ASSERT_NO_THROW(surgical_deid::test::encode_synthetic_mp4(
-        mp4_path_.string(), /*width=*/128, /*height=*/128, /*frame_count=*/10));
+    ASSERT_NO_THROW(surgical_deid::test::encode_synthetic_mp4(mp4_path_.string(), /*width=*/128,
+                                                              /*height=*/128, /*frame_count=*/10));
     ASSERT_TRUE(std::filesystem::exists(mp4_path_));
     ASSERT_GT(std::filesystem::file_size(mp4_path_), 0U);
   }
@@ -208,10 +207,10 @@ TEST_F(VideoFileReaderRuntimeTest, Decodes_SyntheticMp4_AsRgb24Nchw) {
   EXPECT_GE(SinkObservation::ticks, 3U);
   // rank-4 [1, C, H, W] because prepend_batch_dim=true and layout=nchw.
   ASSERT_EQ(SinkObservation::last_shape.size(), 4U);
-  EXPECT_EQ(SinkObservation::last_shape[0], 1);     // N
-  EXPECT_EQ(SinkObservation::last_shape[1], 3);     // C
-  EXPECT_EQ(SinkObservation::last_shape[2], 128);   // H
-  EXPECT_EQ(SinkObservation::last_shape[3], 128);   // W
+  EXPECT_EQ(SinkObservation::last_shape[0], 1);    // N
+  EXPECT_EQ(SinkObservation::last_shape[1], 3);    // C
+  EXPECT_EQ(SinkObservation::last_shape[2], 128);  // H
+  EXPECT_EQ(SinkObservation::last_shape[3], 128);  // W
   EXPECT_EQ(SinkObservation::last_dtype.code, kDLUInt);
   EXPECT_EQ(SinkObservation::last_dtype.bits, 8U);
 }

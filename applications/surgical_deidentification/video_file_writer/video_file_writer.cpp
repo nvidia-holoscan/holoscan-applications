@@ -20,39 +20,26 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#include <yaml-cpp/yaml.h>
-
 #include <holoscan/core/graph.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace holoscan::ops {
 
 namespace {
 
 [[nodiscard]] DLDataType dtype_from_string(const std::string& name) {
-  if (name == "uint8")
-    return DLDataType{kDLUInt, 8U, 1U};
-  if (name == "int8")
-    return DLDataType{kDLInt, 8U, 1U};
-  if (name == "uint16")
-    return DLDataType{kDLUInt, 16U, 1U};
-  if (name == "int16")
-    return DLDataType{kDLInt, 16U, 1U};
-  if (name == "uint32")
-    return DLDataType{kDLUInt, 32U, 1U};
-  if (name == "int32")
-    return DLDataType{kDLInt, 32U, 1U};
-  if (name == "uint64")
-    return DLDataType{kDLUInt, 64U, 1U};
-  if (name == "int64")
-    return DLDataType{kDLInt, 64U, 1U};
-  if (name == "fp16")
-    return DLDataType{kDLFloat, 16U, 1U};
-  if (name == "fp32")
-    return DLDataType{kDLFloat, 32U, 1U};
-  if (name == "fp64")
-    return DLDataType{kDLFloat, 64U, 1U};
-  if (name == "bool")
-    return DLDataType{kDLBool, static_cast<std::uint8_t>(sizeof(bool) * 8U), 1U};
+  if (name == "uint8") return DLDataType{kDLUInt, 8U, 1U};
+  if (name == "int8") return DLDataType{kDLInt, 8U, 1U};
+  if (name == "uint16") return DLDataType{kDLUInt, 16U, 1U};
+  if (name == "int16") return DLDataType{kDLInt, 16U, 1U};
+  if (name == "uint32") return DLDataType{kDLUInt, 32U, 1U};
+  if (name == "int32") return DLDataType{kDLInt, 32U, 1U};
+  if (name == "uint64") return DLDataType{kDLUInt, 64U, 1U};
+  if (name == "int64") return DLDataType{kDLInt, 64U, 1U};
+  if (name == "fp16") return DLDataType{kDLFloat, 16U, 1U};
+  if (name == "fp32") return DLDataType{kDLFloat, 32U, 1U};
+  if (name == "fp64") return DLDataType{kDLFloat, 64U, 1U};
+  if (name == "bool") return DLDataType{kDLBool, static_cast<std::uint8_t>(sizeof(bool) * 8U), 1U};
   throw std::runtime_error("unsupported dtype '" + name +
                            "' (expected one of uint8/int8/uint16/int16/uint32/int32/uint64/"
                            "int64/fp16/fp32/fp64/bool)");
@@ -72,28 +59,20 @@ struct PixFmtInfo {
 };
 
 [[nodiscard]] PixFmtInfo pix_fmt_info(const std::string& name) {
-  if (name == "rgb24")
-    return {AV_PIX_FMT_RGB24, 3, false};
-  if (name == "bgr24")
-    return {AV_PIX_FMT_BGR24, 3, false};
-  if (name == "rgb_fp32")
-    return {AV_PIX_FMT_RGB24, 3, true};
-  if (name == "bgr_fp32")
-    return {AV_PIX_FMT_BGR24, 3, true};
-  if (name == "grayscale_u8")
-    return {AV_PIX_FMT_GRAY8, 1, false};
-  if (name == "grayscale_fp32")
-    return {AV_PIX_FMT_GRAY8, 1, true};
+  if (name == "rgb24") return {AV_PIX_FMT_RGB24, 3, false};
+  if (name == "bgr24") return {AV_PIX_FMT_BGR24, 3, false};
+  if (name == "rgb_fp32") return {AV_PIX_FMT_RGB24, 3, true};
+  if (name == "bgr_fp32") return {AV_PIX_FMT_BGR24, 3, true};
+  if (name == "grayscale_u8") return {AV_PIX_FMT_GRAY8, 1, false};
+  if (name == "grayscale_fp32") return {AV_PIX_FMT_GRAY8, 1, true};
   throw std::runtime_error("unsupported input_pix_fmt '" + name +
                            "' (expected one of rgb24/bgr24/rgb_fp32/bgr_fp32/grayscale_u8/"
                            "grayscale_fp32)");
 }
 
 [[nodiscard]] bool is_nchw(const std::string& layout) {
-  if (layout == "nchw")
-    return true;
-  if (layout == "nhwc")
-    return false;
+  if (layout == "nchw") return true;
+  if (layout == "nhwc") return false;
   throw std::runtime_error("unsupported input_layout '" + layout + "' (expected nchw or nhwc)");
 }
 
@@ -174,14 +153,10 @@ VideoFileWriterOp::VideoFileWriterOp(VideoFileWriterOpParams params) {
 }
 
 VideoFileWriterOp::~VideoFileWriterOp() {
-  if (packet_ != nullptr)
-    av_packet_free(&packet_);
-  if (src_frame_ != nullptr)
-    av_frame_free(&src_frame_);
-  if (sws_ctx_ != nullptr)
-    sws_freeContext(sws_ctx_);
-  if (codec_ctx_ != nullptr)
-    avcodec_free_context(&codec_ctx_);
+  if (packet_ != nullptr) av_packet_free(&packet_);
+  if (src_frame_ != nullptr) av_frame_free(&src_frame_);
+  if (sws_ctx_ != nullptr) sws_freeContext(sws_ctx_);
+  if (codec_ctx_ != nullptr) avcodec_free_context(&codec_ctx_);
   if (format_ctx_ != nullptr) {
     if (format_ctx_->pb != nullptr && !(format_ctx_->oformat->flags & AVFMT_NOFILE)) {
       avio_closep(&format_ctx_->pb);
@@ -289,16 +264,8 @@ void VideoFileWriterOp::start() {
   header_written_ = true;
 
   const PixFmtInfo info = pix_fmt_info(config.input_pix_fmt);
-  sws_ctx_ = sws_getContext(config.width,
-                            config.height,
-                            info.packed_fmt,
-                            config.width,
-                            config.height,
-                            encode_fmt,
-                            SWS_BILINEAR,
-                            nullptr,
-                            nullptr,
-                            nullptr);
+  sws_ctx_ = sws_getContext(config.width, config.height, info.packed_fmt, config.width,
+                            config.height, encode_fmt, SWS_BILINEAR, nullptr, nullptr, nullptr);
   if (sws_ctx_ == nullptr) {
     throw std::runtime_error("VideoFileWriterOp: sws_getContext failed for '" + url + "'");
   }
@@ -342,9 +309,9 @@ expected<void, Error> VideoFileWriterOp::send_and_drain(AVFrame* frame) {
     packet_->stream_index = stream_->index;
     if (av_interleaved_write_frame(format_ctx_, packet_) < 0) {
       av_packet_unref(packet_);
-      return make_unexpected(Error{ErrorCode::kFailure,
-                                   "VideoFileWriterOp: av_interleaved_write_frame failed for '" +
-                                       config.path.string() + "'"});
+      return make_unexpected(
+          Error{ErrorCode::kFailure, "VideoFileWriterOp: av_interleaved_write_frame failed for '" +
+                                         config.path.string() + "'"});
     }
   }
   return {};
@@ -366,16 +333,13 @@ void VideoFileWriterOp::stop() {
       !(format_ctx_->oformat->flags & AVFMT_NOFILE)) {
     avio_closep(&format_ctx_->pb);
   }
-  if (packet_ != nullptr)
-    av_packet_free(&packet_);
-  if (src_frame_ != nullptr)
-    av_frame_free(&src_frame_);
+  if (packet_ != nullptr) av_packet_free(&packet_);
+  if (src_frame_ != nullptr) av_frame_free(&src_frame_);
   if (sws_ctx_ != nullptr) {
     sws_freeContext(sws_ctx_);
     sws_ctx_ = nullptr;
   }
-  if (codec_ctx_ != nullptr)
-    avcodec_free_context(&codec_ctx_);
+  if (codec_ctx_ != nullptr) avcodec_free_context(&codec_ctx_);
   if (format_ctx_ != nullptr) {
     avformat_free_context(format_ctx_);
     format_ctx_ = nullptr;
@@ -482,17 +446,12 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
     return make_unexpected(
         Error{ErrorCode::kFailure, "VideoFileWriterOp: av_frame_make_writable failed"});
   }
-  const int scaled_lines = sws_scale(sws_ctx_,
-                                     packed_data,
-                                     packed_linesize,
-                                     0,
-                                     static_cast<int>(height),
-                                     src_frame_->data,
-                                     src_frame_->linesize);
+  const int scaled_lines =
+      sws_scale(sws_ctx_, packed_data, packed_linesize, 0, static_cast<int>(height),
+                src_frame_->data, src_frame_->linesize);
   if (scaled_lines <= 0) {
-    return make_unexpected(
-        Error{ErrorCode::kFailure,
-              "VideoFileWriterOp: sws_scale failed for '" + config.path.string() + "'"});
+    return make_unexpected(Error{ErrorCode::kFailure, "VideoFileWriterOp: sws_scale failed for '" +
+                                                          config.path.string() + "'"});
   }
 
   src_frame_->pts = next_pts_++;
