@@ -3,11 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <gtest/gtest.h>
-
 #include <filesystem>
 #include <string>
 
+#include <gtest/gtest.h>
 #include <yaml-cpp/yaml.h>
 
 #include "video_file_reader.hpp"

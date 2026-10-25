@@ -7,7 +7,7 @@
 // handful of synthetic uint8 HWC frames into the writer, runs the graph, then probes the output
 // MP4 with libavformat to verify width/height/encoded-frame-count match configuration.
 
-#include <gtest/gtest.h>
+#include <cuda_runtime_api.h>
 
 #include <algorithm>
 #include <chrono>
@@ -19,8 +19,8 @@
 #include <utility>
 #include <vector>
 
-#include <cuda_runtime_api.h>
 #include <dlpack/dlpack.h>
+#include <gtest/gtest.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -70,8 +70,7 @@ class FrameFeeder final : public holoscan::Operator<> {
                     .dtype = kUInt8,
                     .rank = 3U,
                 },
-            .bounds =
-                holoscan::TensorBounds{.max_rank = 3U, .max_byte_span = byte_span},
+            .bounds = holoscan::TensorBounds{.max_rank = 3U, .max_byte_span = byte_span},
             .storage = holoscan::TensorOutputStorage::kRuntimePool,
         });
   }
@@ -179,9 +178,8 @@ struct ProbeResult {
   try {
     holoscan::Graph graph{"video-file-writer-runtime-test"};
     const auto writer = graph.op<VideoFileWriterOp>("writer", params);
-    const auto feeder =
-        graph.op<FrameFeeder>("feeder", params.tensor_port_name, params.height, params.width,
-                              frames_to_send);
+    const auto feeder = graph.op<FrameFeeder>("feeder", params.tensor_port_name, params.height,
+                                              params.width, frames_to_send);
     graph.add_flow(*feeder->output_port(), *writer->input_port(),
                    holoscan::ConnectionOptions{.queue_depth = 4U});
     graph.set_default_clock(graph.add_clock<holoscan::RealtimeClock>("clock"));

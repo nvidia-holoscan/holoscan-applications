@@ -23,8 +23,6 @@
 #include <string_view>
 #include <vector>
 
-#include <yaml-cpp/yaml.h>
-
 #include <holoscan/core/compile.hpp>
 #include <holoscan/core/connection_options.hpp>
 #include <holoscan/core/domain/tensor.hpp>
@@ -37,8 +35,9 @@
 #include <holoscan/core/temporal_contract.hpp>
 #include <holoscan/operators/inference/inference.hpp>
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
-#include <video_file_reader.hpp>
 #include <holoscan/time/realtime_clock.hpp>
+#include <video_file_reader.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace {
 
@@ -210,8 +209,8 @@ int main(int argc, char** argv) {
 
   if (!config_root["inference"] || !config_root["video_source"] || !config_root["preprocessor"]) {
     std::cerr << "config '" << args.config_path
-               << "' is missing required 'inference:', 'video_source:', or 'preprocessor:' "
-                  "section\n";
+              << "' is missing required 'inference:', 'video_source:', or 'preprocessor:' "
+                 "section\n";
     return 1;
   }
 
@@ -220,7 +219,8 @@ int main(int argc, char** argv) {
   TensorPreprocessorOpParams preprocessor_params;
   try {
     inference_params = InferenceOpParams::from_yaml_node(config_root["inference"], config_dir);
-    reader_params = VideoFileReaderOpParams::from_yaml_node(config_root["video_source"], config_dir);
+    reader_params =
+        VideoFileReaderOpParams::from_yaml_node(config_root["video_source"], config_dir);
     preprocessor_params =
         TensorPreprocessorOpParams::from_yaml_node(config_root["preprocessor"], config_dir);
   } catch (const std::exception& exception) {
@@ -241,7 +241,7 @@ int main(int argc, char** argv) {
     auto* infer_out = infer->output_port("de_id_inferred");
     if (infer_in == nullptr) {
       std::cerr << "InferenceOp declared no input port named '"
-                 << preprocessor_params.output_port_name << "'\n";
+                << preprocessor_params.output_port_name << "'\n";
       return 1;
     }
     if (infer_out == nullptr) {
@@ -303,7 +303,7 @@ int main(int argc, char** argv) {
     return 0;
   } catch (const std::exception& exception) {
     std::cerr << "de_id: error running config '" << args.config_path << "': " << exception.what()
-               << '\n';
+              << '\n';
     return 1;
   }
 }
