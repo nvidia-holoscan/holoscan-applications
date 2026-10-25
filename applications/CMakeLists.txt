@@ -5,3 +5,4 @@
 add_holoscan_application(bci_visualization)
 add_holoscan_application(endoscopy_tool_tracking)
 add_holoscan_application(velodyne_lidar)
+add_holoscan_application(surgical_deidentification)
