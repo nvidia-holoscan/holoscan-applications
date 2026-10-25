@@ -21,23 +21,19 @@ extern "C" {
 }
 
 #include <cuda_runtime_api.h>
-#include <yaml-cpp/yaml.h>
 
 #include <holoscan/core/graph.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace holoscan::ops {
 
 namespace {
 
 [[nodiscard]] holoscan::MemoryKind memory_kind_from_string(const std::string& name) {
-  if (name == "cuda_device")
-    return holoscan::MemoryKind::kCudaDevice;
-  if (name == "host")
-    return holoscan::MemoryKind::kHost;
-  if (name == "pinned_host")
-    return holoscan::MemoryKind::kPinnedHost;
-  if (name == "cuda_managed")
-    return holoscan::MemoryKind::kCudaManaged;
+  if (name == "cuda_device") return holoscan::MemoryKind::kCudaDevice;
+  if (name == "host") return holoscan::MemoryKind::kHost;
+  if (name == "pinned_host") return holoscan::MemoryKind::kPinnedHost;
+  if (name == "cuda_managed") return holoscan::MemoryKind::kCudaManaged;
   throw std::runtime_error("unsupported memory_kind '" + name +
                            "' (expected one of cuda_device/host/pinned_host/cuda_managed)");
 }
@@ -54,28 +50,20 @@ struct PixFmtInfo {
 };
 
 [[nodiscard]] PixFmtInfo pix_fmt_info(const std::string& name) {
-  if (name == "rgb24")
-    return {AV_PIX_FMT_RGB24, 3, DLDataType{kDLUInt, 8U, 1U}, false};
-  if (name == "bgr24")
-    return {AV_PIX_FMT_BGR24, 3, DLDataType{kDLUInt, 8U, 1U}, false};
-  if (name == "rgb_fp32")
-    return {AV_PIX_FMT_RGB24, 3, DLDataType{kDLFloat, 32U, 1U}, true};
-  if (name == "bgr_fp32")
-    return {AV_PIX_FMT_BGR24, 3, DLDataType{kDLFloat, 32U, 1U}, true};
-  if (name == "grayscale_u8")
-    return {AV_PIX_FMT_GRAY8, 1, DLDataType{kDLUInt, 8U, 1U}, false};
-  if (name == "grayscale_fp32")
-    return {AV_PIX_FMT_GRAY8, 1, DLDataType{kDLFloat, 32U, 1U}, true};
+  if (name == "rgb24") return {AV_PIX_FMT_RGB24, 3, DLDataType{kDLUInt, 8U, 1U}, false};
+  if (name == "bgr24") return {AV_PIX_FMT_BGR24, 3, DLDataType{kDLUInt, 8U, 1U}, false};
+  if (name == "rgb_fp32") return {AV_PIX_FMT_RGB24, 3, DLDataType{kDLFloat, 32U, 1U}, true};
+  if (name == "bgr_fp32") return {AV_PIX_FMT_BGR24, 3, DLDataType{kDLFloat, 32U, 1U}, true};
+  if (name == "grayscale_u8") return {AV_PIX_FMT_GRAY8, 1, DLDataType{kDLUInt, 8U, 1U}, false};
+  if (name == "grayscale_fp32") return {AV_PIX_FMT_GRAY8, 1, DLDataType{kDLFloat, 32U, 1U}, true};
   throw std::runtime_error("unsupported output_pix_fmt '" + name +
                            "' (expected one of rgb24/bgr24/rgb_fp32/bgr_fp32/grayscale_u8/"
                            "grayscale_fp32)");
 }
 
 [[nodiscard]] bool is_nchw(const std::string& layout) {
-  if (layout == "nchw")
-    return true;
-  if (layout == "nhwc")
-    return false;
+  if (layout == "nchw") return true;
+  if (layout == "nhwc") return false;
   throw std::runtime_error("unsupported output_layout '" + layout + "' (expected nchw or nhwc)");
 }
 
@@ -194,9 +182,7 @@ VideoFileReaderOp::VideoFileReaderOp(VideoFileReaderOpParams params) {
   }
 }
 
-VideoFileReaderOp::~VideoFileReaderOp() {
-  close_stream();
-}
+VideoFileReaderOp::~VideoFileReaderOp() { close_stream(); }
 
 void VideoFileReaderOp::setup(OperatorSpec& spec) {
   const VideoFileReaderOpParams& config = params();
@@ -300,16 +286,9 @@ void VideoFileReaderOp::open_stream() {
   }
 
   const PixFmtInfo info = pix_fmt_info(config.output_pix_fmt);
-  sws_ctx_ = sws_getContext(codec_ctx_->width,
-                            codec_ctx_->height,
-                            codec_ctx_->pix_fmt,
-                            resolved_width_,
-                            resolved_height_,
-                            info.sws_dst_fmt,
-                            SWS_BILINEAR,
-                            nullptr,
-                            nullptr,
-                            nullptr);
+  sws_ctx_ =
+      sws_getContext(codec_ctx_->width, codec_ctx_->height, codec_ctx_->pix_fmt, resolved_width_,
+                     resolved_height_, info.sws_dst_fmt, SWS_BILINEAR, nullptr, nullptr, nullptr);
   if (sws_ctx_ == nullptr) {
     throw std::runtime_error("VideoFileReaderOp: sws_getContext failed for '" + url + "'");
   }
@@ -321,13 +300,8 @@ void VideoFileReaderOp::open_stream() {
                              "'");
   }
   scaled_buffer_.assign(static_cast<std::size_t>(scaled_bytes), 0U);
-  if (av_image_fill_arrays(scaled_frame_->data,
-                           scaled_frame_->linesize,
-                           scaled_buffer_.data(),
-                           info.sws_dst_fmt,
-                           resolved_width_,
-                           resolved_height_,
-                           1) < 0) {
+  if (av_image_fill_arrays(scaled_frame_->data, scaled_frame_->linesize, scaled_buffer_.data(),
+                           info.sws_dst_fmt, resolved_width_, resolved_height_, 1) < 0) {
     throw std::runtime_error("VideoFileReaderOp: av_image_fill_arrays failed for '" + url + "'");
   }
   scaled_frame_->width = resolved_width_;
@@ -460,9 +434,9 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
         return make_unexpected(std::move(retried).error());
       }
       if (!*retried) {
-        return make_unexpected(Error{ErrorCode::kFailure,
-                                     "VideoFileReaderOp: '" + config.path.string() +
-                                         "' produced no frames after loop rewind"});
+        return make_unexpected(
+            Error{ErrorCode::kFailure, "VideoFileReaderOp: '" + config.path.string() +
+                                           "' produced no frames after loop rewind"});
       }
     } else {
       eos_reached_ = true;
@@ -471,17 +445,12 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
   }
 
   const PixFmtInfo info = pix_fmt_info(config.output_pix_fmt);
-  const int scaled_lines = sws_scale(sws_ctx_,
-                                     decoded_frame_->data,
-                                     decoded_frame_->linesize,
-                                     0,
-                                     codec_ctx_->height,
-                                     scaled_frame_->data,
-                                     scaled_frame_->linesize);
+  const int scaled_lines =
+      sws_scale(sws_ctx_, decoded_frame_->data, decoded_frame_->linesize, 0, codec_ctx_->height,
+                scaled_frame_->data, scaled_frame_->linesize);
   if (scaled_lines <= 0) {
-    return make_unexpected(
-        Error{ErrorCode::kFailure,
-              "VideoFileReaderOp: sws_scale failed for '" + config.path.string() + "'"});
+    return make_unexpected(Error{ErrorCode::kFailure, "VideoFileReaderOp: sws_scale failed for '" +
+                                                          config.path.string() + "'"});
   }
 
   const bool nchw = is_nchw(config.output_layout);
@@ -556,9 +525,8 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
                                    "VideoFileReaderOp: no CUDA stream available for a "
                                    "device-memory tensor source"});
     }
-    if (cudaMemcpyAsync(
-            writer->data(), host_buffer_.data(), frame_bytes_, cudaMemcpyHostToDevice, stream) !=
-        cudaSuccess) {
+    if (cudaMemcpyAsync(writer->data(), host_buffer_.data(), frame_bytes_, cudaMemcpyHostToDevice,
+                        stream) != cudaSuccess) {
       return make_unexpected(
           Error{ErrorCode::kFailure, "VideoFileReaderOp: cudaMemcpyAsync host->device failed"});
     }
