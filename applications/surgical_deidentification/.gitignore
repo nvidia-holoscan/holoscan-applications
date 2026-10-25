@@ -1,0 +1,3 @@
+# Local-only build-time artifacts; not for upstream.
+Dockerfile.local
+holoscan-sdk-install/
