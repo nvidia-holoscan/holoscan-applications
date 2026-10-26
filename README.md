@@ -66,13 +66,17 @@ requires one.
 ### Build on the host
 
 To build and run without a container, install the application's development
-dependencies and set `HOLOSCAN_SDK_ROOT` to a compatible
-[SDK installation](https://docs.nvidia.com/holoscan/sdk-user-guide/setup/sdk-installation):
+dependencies and a compatible
+[SDK installation](https://docs.nvidia.com/holoscan/sdk-user-guide/setup/sdk-installation),
+then add `--local`:
 
 ```bash
-export HOLOSCAN_SDK_ROOT=/path/to/holoscan/install
 holoscan run <application> <mode> --local
 ```
+
+The CLI finds an SDK installed under `/usr`, such as the Debian packages, by
+default. For an SDK installed elsewhere or a source build, set
+`HOLOSCAN_SDK_ROOT=/path/to/holoscan/install`.
 
 ### Tests and troubleshooting
 
