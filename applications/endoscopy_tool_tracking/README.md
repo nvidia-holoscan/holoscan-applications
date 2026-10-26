@@ -81,13 +81,15 @@ Add `--dryrun --verbose` to preview the image and the build and run commands.
 
 ### On the host
 
-Install the [dependencies](#dependencies) on the host, select your SDK
-installation, and add `--local`:
+Install the [dependencies](#dependencies) on the host and add `--local`:
 
 ```bash
-export HOLOSCAN_SDK_ROOT=/path/to/holoscan/install
 holoscan run endoscopy_tool_tracking replay --local
 ```
+
+The CLI finds an SDK installed under `/usr`, such as the Debian packages, by
+default. For an SDK installed elsewhere or a source build, set
+`HOLOSCAN_SDK_ROOT=/path/to/holoscan/install`.
 
 ### Modes and options
 
@@ -136,8 +138,7 @@ holoscan test endoscopy_tool_tracking --no-xvfb \
   --cmake-options='-DENDOSCOPY_ENABLE_VISUALIZATION=ON;-DENDOSCOPY_DATA_DIR=/workspace/holohub/data/endoscopy'
 ```
 
-For host tests, set `HOLOSCAN_SDK_ROOT`, add `--local`, and set
-`ENDOSCOPY_DATA_DIR` to the host path.
+For host tests, add `--local` and set `ENDOSCOPY_DATA_DIR` to the host path.
 
 The suite covers invalid arguments, truncated RGB streams, repeated replay,
 recording byte fidelity, preservation of input files, data-preparation failures,
@@ -158,7 +159,7 @@ native Wayland have not yet been exercised.
 ## Standalone build
 
 As an advanced option, build and run the C++ executable without the CLI or
-Python (tests disabled), using the SDK selected by `HOLOSCAN_SDK_ROOT`:
+Python (tests disabled). Omit `holoscan_ROOT` for an SDK installed under `/usr`:
 
 ```bash
 cmake -S applications/endoscopy_tool_tracking -B build/endoscopy-standalone \
