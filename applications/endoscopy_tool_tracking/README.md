@@ -62,27 +62,37 @@ NGC resource; they are downloaded separately from this source repository.
 
 ## Build and run
 
-Install the pinned CLI and select your SDK installation and matching development
-image once per shell:
+Install the repository tools as described in the repository
+[Getting started](../../README.md#getting-started). Run the commands below from
+the repository root.
+
+### In a container
+
+The CLI builds and runs in a container by default. Select the Holoscan SDK image:
 
 ```bash
-uv tool install --python 3.12 holoscan-cli==5.0.0
-export HOLOSCAN_SDK_ROOT=/path/to/holoscan-sdk/install-endoscopy-5x
-export HOLOSCAN_CLI_BASE_IMAGE=holoscan-sdk-build-aarch64:main-5x
-```
-
-The image above is a local SDK build image, not a published image to pull. Use an
-image matching your SDK and architecture. From the repository root:
-
-```bash
+export HOLOSCAN_CLI_BASE_IMAGE=nvcr.io/nvidia/clara-holoscan/holoscan:v5.0.0-cuda13
 holoscan run endoscopy_tool_tracking replay
 holoscan run endoscopy_tool_tracking headless
 holoscan run endoscopy_tool_tracking ci
 ```
 
+Add `--dryrun --verbose` to preview the image and the build and run commands.
+
+### On the host
+
+Install the [dependencies](#dependencies) on the host, select your SDK
+installation, and add `--local`:
+
+```bash
+export HOLOSCAN_SDK_ROOT=/path/to/holoscan/install
+holoscan run endoscopy_tool_tracking replay --local
+```
+
+### Modes and options
+
 Every mode launches the C++ executable directly. `replay` and `headless` use the
-prepared files in `data/endoscopy`; `ci` needs no sample data. Use `--local` to
-build and run on the host when its development dependencies are installed.
+prepared files in `data/endoscopy`; `ci` needs no sample data.
 
 `replay` displays when an X11 or Wayland display is available, otherwise it runs
 headless. To require a window, use `--run-args='--display true'`.
@@ -116,33 +126,18 @@ the repository mount. With `--local`, use a host path instead. Existing recordin
 are never overwritten. Use `--run-args='--help'` for model/cache paths, replay
 timing, dimensions for synthetic tests, and timeout settings.
 
-## Standalone build
-
-Build and run the C++ executable without the CLI or Python (tests disabled):
-
-```bash
-cmake -S applications/endoscopy_tool_tracking -B build/endoscopy-standalone \
-  -Dholoscan_ROOT="$HOLOSCAN_SDK_ROOT" \
-  -DCMAKE_CUDA_ARCHITECTURES=native \
-  -DENDOSCOPY_ENABLE_VISUALIZATION=OFF \
-  -DBUILD_TESTING=OFF
-cmake --build build/endoscopy-standalone --parallel
-./build/endoscopy-standalone/endoscopy_tool_tracking --data data/endoscopy --display false
-```
-
-Choose explicit CUDA architectures when building for other GPUs. Setting
-`ENDOSCOPY_ENABLE_VISUALIZATION=OFF` removes the display dependency entirely.
-
 ## Tests
 
-The CLI supplies the repository's CTest driver. With the SDK and image selected:
+The CLI supplies the repository's CTest driver; `holoscan test` takes no mode.
+In a container, with `HOLOSCAN_CLI_BASE_IMAGE` selected:
 
 ```bash
 holoscan test endoscopy_tool_tracking --no-xvfb \
   --cmake-options='-DENDOSCOPY_ENABLE_VISUALIZATION=ON;-DENDOSCOPY_DATA_DIR=/workspace/holohub/data/endoscopy'
 ```
 
-For host tests, add `--local` and set `ENDOSCOPY_DATA_DIR` to the host path.
+For host tests, set `HOLOSCAN_SDK_ROOT`, add `--local`, and set
+`ENDOSCOPY_DATA_DIR` to the host path.
 
 The suite covers invalid arguments, truncated RGB streams, repeated replay,
 recording byte fidelity, preservation of input files, data-preparation failures,
@@ -159,3 +154,21 @@ The application was validated on aarch64 (GB10) with Holoscan SDK 5.0.0 at
 `main-5x` commit `e5191121d`, CUDA 13.0, and TensorRT 10.16.1. Headless inference
 and HoloViz rendering under Xvfb completed 300 real video frames. x86_64 and
 native Wayland have not yet been exercised.
+
+## Standalone build
+
+As an advanced option, build and run the C++ executable without the CLI or
+Python (tests disabled), using the SDK selected by `HOLOSCAN_SDK_ROOT`:
+
+```bash
+cmake -S applications/endoscopy_tool_tracking -B build/endoscopy-standalone \
+  -Dholoscan_ROOT="$HOLOSCAN_SDK_ROOT" \
+  -DCMAKE_CUDA_ARCHITECTURES=native \
+  -DENDOSCOPY_ENABLE_VISUALIZATION=OFF \
+  -DBUILD_TESTING=OFF
+cmake --build build/endoscopy-standalone --parallel
+./build/endoscopy-standalone/endoscopy_tool_tracking --data data/endoscopy --display false
+```
+
+Choose explicit CUDA architectures when building for other GPUs. Setting
+`ENDOSCOPY_ENABLE_VISUALIZATION=OFF` removes the display dependency entirely.
