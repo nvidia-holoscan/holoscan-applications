@@ -1,0 +1,50 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// The AprilTag detector's output message: every tag found in one frame.
+// Compatible edits keep the root name, file identifier and explicit field ids,
+// and only append fields.
+namespace tag_detection.schema;
+
+struct Point2f {
+  x: float;
+  y: float;
+}
+
+struct TagDetection {
+  id: int;
+  // Bits corrected while decoding.
+  hamming: int;
+  // Mean distance of the data bits from the decision threshold; higher is better.
+  decision_margin: float;
+  // Pixels; pixel centers are at integer coordinates.
+  center: Point2f;
+  // From the tag's bottom-left corner, counter-clockwise as the tag is printed.
+  corners: [Point2f:4];
+  // The fields below are valid only when has_pose is true.
+  has_pose: bool;
+  // Tag frame in the camera frame: row-major rotation and translation in meters.
+  // Camera: x right, y down, z forward. Tag: x right, y down, z into the tag.
+  rotation: [float:9];
+  translation: [float:3];
+  // Object-space error of the pose solution.
+  pose_error: float;
+}
+
+table AprilTagDetections {
+  // Frames the detector has processed before this one in this run.
+  frame: ulong (id: 0);
+  image_width: int (id: 1);
+  image_height: int (id: 2);
+  // The backend and tag family that produced the detections.
+  backend: string (id: 3);
+  family: string (id: 4);
+  // Time spent detecting, from receiving the image to having results on the host.
+  detect_time_us: float (id: 5);
+  detections: [TagDetection] (id: 6);
+  // Tags found beyond the message's capacity and not reported.
+  dropped: int (id: 7);
+}
+
+root_type AprilTagDetections;
+file_identifier "ATAG";
