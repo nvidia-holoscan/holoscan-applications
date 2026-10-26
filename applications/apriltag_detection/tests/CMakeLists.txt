@@ -1,0 +1,114 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# These tests need the SDK, its CUDA toolchain and a GPU. The application has
+# no SDK-free tests to register at the top level.
+option(APRILTAG_DETECTION_TEST_DISPLAY
+  "Also test offscreen Holoviz rendering (needs Vulkan in the test environment)" OFF)
+
+add_executable(apriltag_backend_accuracy_test backend_accuracy_test.cpp)
+target_link_libraries(apriltag_backend_accuracy_test PRIVATE apriltag_detection_core)
+
+add_executable(apriltag_operator_test operator_test.cpp)
+target_link_libraries(apriltag_operator_test PRIVATE
+  apriltag_detection_operators holoscan::testing)
+target_compile_definitions(apriltag_operator_test PRIVATE
+  APRILTAG_DETECTION_ENABLE_VISUALIZATION=$<BOOL:${APRILTAG_DETECTION_ENABLE_VISUALIZATION}>)
+
+add_executable(apriltag_write_test_frames write_test_frames.cpp)
+target_link_libraries(apriltag_write_test_frames PRIVATE apriltag_detection_core)
+
+add_library(apriltag_spawn_thread_preload SHARED spawn_thread_preload.cpp)
+
+add_test(NAME apriltag_backend_accuracy COMMAND apriltag_backend_accuracy_test)
+add_test(NAME apriltag_operators COMMAND apriltag_operator_test)
+
+# Runs the application through run_and_match.cmake, which checks its exit
+# status as well as its output: apriltag_app_test(<name> <exit status> <output
+# regex> <arguments>...).
+set(_run_and_match "${CMAKE_CURRENT_SOURCE_DIR}/run_and_match.cmake")
+function(apriltag_app_test name status output)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} -DEXPECT_EXIT=${status} "-DEXPECT_OUTPUT=${output}"
+      -P "${_run_and_match}" -- $<TARGET_FILE:apriltag_detection> ${ARGN})
+endfunction()
+
+# The application on synthetic frames, every compiled backend, from host and
+# from GPU memory. Each run checks its detections against ground truth.
+apriltag_app_test(apriltag_app_synthetic 0 "verdict=PASS"
+  --backend all --count 30 --period-ms 10 --display false)
+apriltag_app_test(apriltag_app_device_input 0 "verdict=PASS"
+  --backend all --count 20 --period-ms 10 --device-input true --display false)
+apriltag_app_test(apriltag_app_family 0 "verdict=PASS"
+  --backend all --count 10 --period-ms 10 --family tagStandard41h12 --display false)
+
+# A folder of images: gray and color frames written by the fixture, then read
+# back with explicit intrinsics.
+set(_frames "${CMAKE_CURRENT_BINARY_DIR}/frames")
+add_test(NAME apriltag_frames_setup
+  COMMAND $<TARGET_FILE:apriltag_write_test_frames> "${_frames}/gray" 6 gray)
+add_test(NAME apriltag_frames_setup_rgb
+  COMMAND $<TARGET_FILE:apriltag_write_test_frames> "${_frames}/rgb" 6 rgb)
+set_tests_properties(apriltag_frames_setup apriltag_frames_setup_rgb
+  PROPERTIES FIXTURES_SETUP apriltag_frames)
+foreach(_kind IN ITEMS gray rgb)
+  apriltag_app_test(apriltag_app_images_${_kind} 0 "backend=cuda frames=6/6 tags=24 .*verdict=PASS"
+    --source images --images "${_frames}/${_kind}" --backend all
+    --fx 1152 --fy 1152 --cx 639.5 --cy 359.5 --tag-size 0.12 --period-ms 10 --display false)
+  set_tests_properties(apriltag_app_images_${_kind} PROPERTIES FIXTURES_REQUIRED apriltag_frames)
+endforeach()
+
+# Invalid input fails fast with a usage error (exit status 2) instead of
+# starting a run.
+apriltag_app_test(apriltag_app_rejects_unknown_backend 2 "^error: "
+  --backend gpu --display false)
+apriltag_app_test(apriltag_app_rejects_zero_count 2 "^error: " --count 0 --display false)
+apriltag_app_test(apriltag_app_rejects_missing_images 2 "^error: "
+  --source images --display false)
+apriltag_app_test(apriltag_app_rejects_partial_intrinsics 2 "^error: "
+  --source images --images "${_frames}/gray" --fx 900 --display false)
+
+# A run that fails once started: a reporter cannot open its output file. It
+# exits 1 and names the failing operator.
+set(_blocked "${CMAKE_CURRENT_BINARY_DIR}/blocked_output")
+add_test(NAME apriltag_app_failed_run
+  COMMAND ${CMAKE_COMMAND} -DEXPECT_EXIT=1 "-DEXPECT_OUTPUT=report_cuda.*verdict=FAIL"
+    "-DMAKE_DIRECTORY=${_blocked}/cuda.jsonl" -P "${_run_and_match}" --
+    $<TARGET_FILE:apriltag_detection> --backend cuda --count 10 --period-ms 10 --display false
+    --output-dir "${_blocked}")
+
+# A stop request ends the run early with its own verdict, and the warning it
+# leaves is shown. (A shell starts background jobs with SIGINT ignored, so the
+# test sends SIGTERM.)
+add_test(NAME apriltag_app_stopped
+  COMMAND ${CMAKE_COMMAND} -DEXPECT_EXIT=1 "-DEXPECT_OUTPUT=warning RUNTIME_MANAGED_SIGNAL_RECEIVED.*frames=[0-9]+/1000 .*verdict=STOPPED"
+    -P "${_run_and_match}" -- sh -c
+    "\"$1\" --backend cuda --count 1000 --period-ms 10 --display false & sleep 3 && kill -TERM $! && wait $!"
+    sh $<TARGET_FILE:apriltag_detection>)
+
+# Another thread running before main(), as under a profiler or a sanitizer:
+# the run goes ahead without managed signal handling, and says so.
+add_test(NAME apriltag_app_without_signal_domain
+  COMMAND ${CMAKE_COMMAND} -DEXPECT_EXIT=0
+    "-DEXPECT_OUTPUT=without managed SIGINT/SIGTERM handling.*verdict=PASS"
+    -P "${_run_and_match}" -- ${CMAKE_COMMAND} -E env
+    LD_PRELOAD=$<TARGET_FILE:apriltag_spawn_thread_preload>
+    $<TARGET_FILE:apriltag_detection> --backend cuda --count 10 --period-ms 10 --display false)
+
+if(APRILTAG_DETECTION_ENABLE_VISUALIZATION)
+  # The display graphs compile, with or without a display or Vulkan to run them.
+  apriltag_app_test(apriltag_app_display_plan 0 "plan=OK"
+    --backend all --display true --compile-only true)
+  apriltag_app_test(apriltag_app_headless_plan 0 "plan=OK"
+    --backend all --display headless --snapshot "${CMAKE_CURRENT_BINARY_DIR}/unused.ppm"
+    --compile-only true)
+endif()
+
+if(APRILTAG_DETECTION_ENABLE_VISUALIZATION AND APRILTAG_DETECTION_TEST_DISPLAY)
+  apriltag_app_test(apriltag_app_headless_display 0 "rendered=[1-9][0-9]*/20.*verdict=PASS"
+    --backend cuda --count 20 --period-ms 20 --display headless
+    --snapshot "${CMAKE_CURRENT_BINARY_DIR}/snapshot.ppm")
+endif()
+
+get_property(_tests DIRECTORY PROPERTY TESTS)
+set_tests_properties(${_tests} PROPERTIES LABELS "apriltag;gpu" TIMEOUT 600)
