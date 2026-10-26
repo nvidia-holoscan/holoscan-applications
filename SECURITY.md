@@ -62,7 +62,12 @@ The principal security boundaries are:
 2. **Build dependency substitution:** `Dockerfile` accepts a caller-provided
    `BASE_IMAGE`, and Python installation uses the default package index
    (PyPI). An untrusted image, compromised index, or package-name
-   collision could introduce code during container or CI builds.
+   collision could introduce code during container or CI builds. Application
+   Dockerfiles may add third-party package repositories (`apriltag_detection`
+   adds NVIDIA's Jetson apt repository for VPI, accepting only a pinned
+   signing-key fingerprint and pinned package versions), and application CMake
+   may download pinned sources at configure time, verified by SHA-256. A
+   compromised repository key or upstream release could still introduce code.
 3. **CI and lint supply-chain compromise:** GitHub Actions and remote pre-commit
    hooks execute third-party code selected by version tags. A compromised
    upstream release or mutable tag could affect CI runners and developer
