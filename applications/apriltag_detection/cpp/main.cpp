@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // AprilTag Detection: images in, tag ids, corners and poses out, on a choice of
-// backends. One source fans out to one AprilTagDetectorOp per selected backend,
-// so backends can be compared on identical frames; each detector feeds a
-// reporter, and the first optionally draws on a Holoviz display.
+// backends. One source (synthetic scenes, image files or a webcam) fans out to
+// one AprilTagDetectorOp per selected backend, so backends can be compared on
+// identical frames; each detector feeds a reporter, and the first optionally
+// draws on a Holoviz display.
 
 #include <algorithm>
-#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
@@ -39,7 +39,6 @@
 #include <holoscan/visualization/holoviz_op.hpp>
 
 #include "operators/apriltag_overlay_op.hpp"
-#include "operators/render_snapshot_op.hpp"
 #endif
 
 #include "detector/detection.hpp"
@@ -56,27 +55,26 @@ namespace td = tag_detection;
 
 constexpr std::string_view kAppName = "apriltag_detection";
 
-enum class DisplayMode { kAuto, kOn, kOff, kHeadless };
-enum class Source { kSynthetic, kImages };
+enum class DisplayMode { kAuto, kOn, kOff };
+enum class Source { kSynthetic, kImages, kCamera };
+
+// How long a finite run may take beyond its expected time.
+constexpr auto kTimeoutAllowance = std::chrono::seconds{120};
 
 struct Options {
   Source source{Source::kSynthetic};
   std::filesystem::path images;
-  bool loop{false};
+  std::filesystem::path device{"/dev/video0"};
   std::vector<td::Backend> backends{td::Backend::kCuda};
   td::DetectorOptions detector;
   double tag_size{0.12};
   std::optional<td::CameraIntrinsics> intrinsics;
-  int width{1280};
-  int height{720};
+  std::optional<int> width;
+  std::optional<int> height;
   std::optional<std::uint32_t> count;
   std::uint32_t period_ms{33};
   bool device_input{false};
-  bool verify{true};
   DisplayMode display{DisplayMode::kAuto};
-  std::filesystem::path output_dir;
-  std::filesystem::path snapshot;
-  std::uint32_t timeout_seconds{120};
   bool compile_only{false};
   bool help{false};
 };
@@ -146,13 +144,15 @@ Options parse_args(int argc, char** argv) {
         opts.source = Source::kSynthetic;
       } else if (value == "images") {
         opts.source = Source::kImages;
+      } else if (value == "camera") {
+        opts.source = Source::kCamera;
       } else {
-        throw std::invalid_argument("--source must be synthetic or images");
+        throw std::invalid_argument("--source must be synthetic, images or camera");
       }
     } else if (option == "--images") {
       opts.images = value;
-    } else if (option == "--loop") {
-      opts.loop = parse_bool(value, option);
+    } else if (option == "--device") {
+      opts.device = value;
     } else if (option == "--backend") {
       opts.backends = parse_backends(value);
     } else if (option == "--family") {
@@ -187,22 +187,10 @@ Options parse_args(int argc, char** argv) {
       opts.period_ms = parse_number<std::uint32_t>(value, option);
     } else if (option == "--device-input") {
       opts.device_input = parse_bool(value, option);
-    } else if (option == "--verify") {
-      opts.verify = parse_bool(value, option);
     } else if (option == "--display") {
-      if (value == "auto") {
-        opts.display = DisplayMode::kAuto;
-      } else if (value == "headless") {
-        opts.display = DisplayMode::kHeadless;
-      } else {
-        opts.display = parse_bool(value, option) ? DisplayMode::kOn : DisplayMode::kOff;
-      }
-    } else if (option == "--snapshot") {
-      opts.snapshot = value;
-    } else if (option == "--output-dir") {
-      opts.output_dir = value;
-    } else if (option == "--timeout-seconds") {
-      opts.timeout_seconds = parse_number<std::uint32_t>(value, option);
+      opts.display = value == "auto"             ? DisplayMode::kAuto
+                     : parse_bool(value, option) ? DisplayMode::kOn
+                                                 : DisplayMode::kOff;
     } else if (option == "--compile-only") {
       opts.compile_only = parse_bool(value, option);
     } else {
@@ -214,8 +202,8 @@ Options parse_args(int argc, char** argv) {
     throw std::invalid_argument("--fx, --fy, --cx and --cy go together");
   }
   if (given == 4) {
-    if (opts.source == Source::kSynthetic) {
-      throw std::invalid_argument("synthetic scenes set their own intrinsics; drop --fx..--cy");
+    if (opts.source != Source::kImages) {
+      throw std::invalid_argument("--fx..--cy apply to --source images only");
     }
     opts.intrinsics = td::CameraIntrinsics{*fx, *fy, *cx, *cy};
   }
@@ -227,13 +215,16 @@ void usage(const char* argv0) {
       << "Usage: " << argv0
       << " [options]\n"
          "Input:\n"
-         "  --source synthetic|images  Rendered tags with ground truth, or image files\n"
-         "                             (default: synthetic)\n"
-         "  --images DIR               PGM/PPM images, read in name order (--source images)\n"
-         "  --loop true|false          Repeat the images until --count frames (default: false)\n"
-         "  --count N                  Frames (default: 300 synthetic, every image once)\n"
-         "  --period-ms N              Source period, 1..1000 ms (default: 33)\n"
-         "  --width N --height N       Synthetic image size (default: 1280x720)\n"
+         "  --source synthetic|images|camera\n"
+         "                             Rendered tags with ground truth, image files, or a\n"
+         "                             V4L2 webcam (default: synthetic)\n"
+         "  --images DIR               PGM/PPM images, read once in name order\n"
+         "  --device PATH              The webcam (default: /dev/video0)\n"
+         "  --count N                  Frames (default: 300 synthetic, every image once,\n"
+         "                             camera until Ctrl+C)\n"
+         "  --period-ms N              Synthetic and image period, 1..1000 ms (default: 33)\n"
+         "  --width N --height N       Synthetic size (default: 1280x720), or a YUYV size\n"
+         "                             the camera offers (default: 640x480)\n"
          "  --device-input true|false  Synthetic frames in GPU memory (default: false)\n"
          "Detection:\n"
          "  --backend LIST             Comma-separated: cpu, cuda, vpi, vpi-pva, vpi-cpu, or\n"
@@ -248,54 +239,52 @@ void usage(const char* argv0) {
          "  --fx F --fy F --cx C --cy C  Camera intrinsics in pixels\n"
          "  --tag-size M               Black-border width in meters (default: 0.12)\n"
          "Output:\n"
-         "  --display auto|true|false|headless\n"
-         "                             Show detections when a display is available, or\n"
-         "                             render them offscreen (default: auto)\n"
-         "  --snapshot FILE            With --display headless, save the last rendered\n"
-         "                             frame as a PPM image\n"
-         "  --output-dir DIR           Write <backend>.jsonl, one line per frame\n"
-         "  --verify true|false        Check synthetic detections against ground truth\n"
-         "                             (default: true)\n"
-         "  --timeout-seconds N        Allowance beyond the expected run time (default: 120)\n"
+         "  --display auto|true|false  Show the first backend's detections (default: auto,\n"
+         "                             on for the camera, else when a display is available)\n"
          "  --compile-only true|false  Build and compile the graph, then exit without running\n"
          "                             it (default: false)\n";
 }
 
 void validate(Options& opts) {
-  if (opts.period_ms == 0 || opts.period_ms > 1000 || opts.timeout_seconds == 0) {
-    throw std::invalid_argument("--period-ms must be 1..1000 and --timeout-seconds positive");
+  if (opts.period_ms == 0 || opts.period_ms > 1000) {
+    throw std::invalid_argument("--period-ms must be 1..1000");
+  }
+  if (opts.count && *opts.count == 0) {
+    throw std::invalid_argument("--count must be positive");
+  }
+  if (!opts.images.empty() && opts.source != Source::kImages) {
+    throw std::invalid_argument("--images needs --source images");
+  }
+  if (opts.device_input && opts.source != Source::kSynthetic) {
+    throw std::invalid_argument("--device-input applies to synthetic frames only");
   }
   if (opts.source == Source::kImages) {
     if (opts.images.empty()) {
       throw std::invalid_argument("--source images needs --images DIR");
     }
-    if (opts.device_input) {
-      throw std::invalid_argument("--device-input applies to synthetic frames only");
+    if (opts.count || opts.width || opts.height) {
+      throw std::invalid_argument("--source images reads every image once at its own size");
     }
-  } else {
-    if (!opts.images.empty()) {
-      throw std::invalid_argument("--images needs --source images");
-    }
-    if (!opts.count) {
-      opts.count = 300;
-    }
-    if (*opts.count == 0) {
-      throw std::invalid_argument("synthetic runs need --count > 0");
-    }
+  } else if (opts.source == Source::kSynthetic) {
+    opts.width = opts.width.value_or(1280);
+    opts.height = opts.height.value_or(720);
+    opts.count = opts.count.value_or(300);
     // The synthetic scene's own camera and tags.
     const td::SyntheticScene scene =
-        td::make_scene(opts.detector.family, 0, opts.width, opts.height);
+        td::make_scene(opts.detector.family, 0, *opts.width, *opts.height);
     opts.intrinsics = scene.intrinsics;
     opts.tag_size = scene.tag_size;
+  } else {
+    opts.width = opts.width.value_or(640);
+    opts.height = opts.height.value_or(480);
+    td::check_camera(td::CameraSourceConfig{
+        .device = opts.device, .width = *opts.width, .height = *opts.height});
+    if (opts.display == DisplayMode::kAuto) {
+      opts.display = DisplayMode::kOn;
+    }
   }
   if (!(opts.tag_size > 0)) {
     throw std::invalid_argument("--tag-size must be positive");
-  }
-  if (!opts.snapshot.empty() && opts.display != DisplayMode::kHeadless) {
-    throw std::invalid_argument("--snapshot needs --display headless");
-  }
-  if (!opts.output_dir.empty() && !std::filesystem::is_directory(opts.output_dir)) {
-    throw std::invalid_argument("--output-dir is not a directory: " + opts.output_dir.string());
   }
   td::validate_options(opts.detector);
   for (const td::Backend backend : opts.backends) {
@@ -310,14 +299,18 @@ double percentile(std::vector<float> values, double fraction) {
   return values[index];
 }
 
+// `expected_frames` is 0 for a live camera run, which has no expected count.
 void print_report(const td::BackendReport& report, std::uint32_t expected_frames) {
   double mean = 0.0;
   for (const float ms : report.detect_ms) mean += ms;
   mean = report.detect_ms.empty() ? 0.0 : mean / static_cast<double>(report.detect_ms.size());
   std::cout << std::fixed << std::setprecision(2) << kAppName << ": backend=" << report.backend
-            << " frames=" << report.frames << '/' << expected_frames << " tags=" << report.tags
-            << " detect_ms(mean/p50/p95/max)=" << mean << '/' << percentile(report.detect_ms, 0.5)
-            << '/' << percentile(report.detect_ms, 0.95) << '/'
+            << " frames=" << report.frames;
+  if (expected_frames != 0) {
+    std::cout << '/' << expected_frames;
+  }
+  std::cout << " tags=" << report.tags << " detect_ms(mean/p50/p95/max)=" << mean << '/'
+            << percentile(report.detect_ms, 0.5) << '/' << percentile(report.detect_ms, 0.95) << '/'
             << percentile(report.detect_ms, 1.0);
   if (report.verified) {
     std::cout << " truth: missed=" << report.missed_tags << " extra=" << report.extra_tags
@@ -335,55 +328,52 @@ void print_report(const td::BackendReport& report, std::uint32_t expected_frames
 using SignalDomain = holoscan::expected<holoscan::ManagedShutdownSignals, holoscan::Error>;
 
 int execute(const Options& opts, SignalDomain& signals) {
+  holoscan::Graph graph{std::string(kAppName)};
+  const auto period = std::chrono::milliseconds(opts.period_ms);
+  // Frames the run expects; 0 for a camera that runs until stopped.
+  std::uint32_t frames = opts.count.value_or(0);
+  int image_width = opts.width.value_or(0);
+  int image_height = opts.height.value_or(0);
+  int image_channels = 3;
+  const holoscan::Output<holoscan::schema::ImageT>* source_output = nullptr;
+  if (opts.source == Source::kSynthetic) {
+    auto source = graph.op<td::SyntheticTagSourceOp>(
+        "source", td::SyntheticSourceConfig{.width = image_width,
+                                            .height = image_height,
+                                            .family = opts.detector.family,
+                                            .count = frames,
+                                            .period = period,
+                                            .device_output = opts.device_input});
+    source_output = &source->image;
+  } else if (opts.source == Source::kImages) {
+    auto files = td::list_pnm_files(opts.images);
+    frames = static_cast<std::uint32_t>(files.size());
+    auto source = graph.op<td::ImageFileSourceOp>(
+        "source", td::ImageFileSourceConfig{.files = std::move(files), .period = period});
+    image_width = source->first().width;
+    image_height = source->first().height;
+    image_channels = source->first().channels;
+    source_output = &source->image;
+  } else {
+    auto source = graph.op<td::CameraSourceOp>(
+        "source",
+        td::CameraSourceConfig{
+            .device = opts.device, .width = image_width, .height = image_height, .count = frames});
+    source_output = &source->image;
+  }
+
   const bool display_available =
       env_set("DISPLAY") || (env_set("WAYLAND_DISPLAY") && env_set("XDG_RUNTIME_DIR"));
-  const bool headless = opts.display == DisplayMode::kHeadless;
-  const bool display = headless || opts.display == DisplayMode::kOn ||
+  const bool display = opts.display == DisplayMode::kOn ||
                        (opts.display == DisplayMode::kAuto && display_available &&
                         APRILTAG_DETECTION_ENABLE_VISUALIZATION);
   if (display && !APRILTAG_DETECTION_ENABLE_VISUALIZATION) {
     throw std::invalid_argument("--display needs a build with visualization enabled");
   }
-  if (opts.display == DisplayMode::kOn && !display_available && !opts.compile_only) {
-    throw std::invalid_argument("--display true needs a display server; try --display headless");
-  }
-  auto rendered = std::make_shared<std::atomic<std::uint32_t>>(0U);
-
-  holoscan::Graph graph{std::string(kAppName)};
-  const auto period = std::chrono::milliseconds(opts.period_ms);
-  std::uint32_t frames = 0;
-  int image_width = opts.width;
-  int image_height = opts.height;
-  int image_channels = 3;
-  const holoscan::Output<holoscan::schema::ImageT>* source_output = nullptr;
-  std::optional<holoscan::OperatorHandle<td::SyntheticTagSourceOp>> synthetic;
-  std::optional<holoscan::OperatorHandle<td::ImageFileSourceOp>> files;
-  if (opts.source == Source::kSynthetic) {
-    frames = *opts.count;
-    synthetic.emplace(graph.op<td::SyntheticTagSourceOp>(
-        "source", td::SyntheticSourceConfig{.width = opts.width,
-                                            .height = opts.height,
-                                            .family = opts.detector.family,
-                                            .count = frames,
-                                            .period = period,
-                                            .device_output = opts.device_input}));
-    source_output = &(*synthetic)->image;
-  } else {
-    const auto paths = td::list_pnm_files(opts.images);
-    const td::PnmImage first = td::read_pnm(paths.front());
-    image_width = first.width;
-    image_height = first.height;
-    image_channels = first.channels;
-    files.emplace(graph.op<td::ImageFileSourceOp>(
-        "source",
-        td::ImageFileSourceConfig{
-            .files = paths, .count = opts.count.value_or(0), .loop = opts.loop, .period = period}));
-    const auto total = static_cast<std::uint32_t>(paths.size());
-    frames = opts.count.value_or(0) == 0 ? total : *opts.count;
-    if (!opts.loop && frames > total) {
-      throw std::invalid_argument("--count exceeds the number of images; add --loop true");
-    }
-    source_output = &(*files)->image;
+  if (display && !display_available && !opts.compile_only) {
+    throw std::invalid_argument(
+        "the display needs a display server; set DISPLAY or add "
+        "--display false");
   }
 
   // Lossless edges: every detector sees every frame, in order, so reporters can
@@ -405,18 +395,13 @@ int execute(const Options& opts, SignalDomain& signals) {
     report->backend = name;
     reports.push_back(report);
     std::optional<td::GroundTruth> truth;
-    if (opts.source == Source::kSynthetic && opts.verify) {
-      truth = td::GroundTruth{opts.detector.family, opts.width, opts.height};
+    if (opts.source == Source::kSynthetic) {
+      truth = td::GroundTruth{opts.detector.family, image_width, image_height};
     }
     auto reporter = graph.op<td::DetectionReportOp>(
         "report_" + name,
-        td::DetectionReportConfig{.report = report,
-                                  .completion = completion,
-                                  .expected_frames = frames,
-                                  .truth = truth,
-                                  .output = opts.output_dir.empty()
-                                                ? std::filesystem::path{}
-                                                : opts.output_dir / (name + ".jsonl")});
+        td::DetectionReportConfig{
+            .report = report, .completion = completion, .expected_frames = frames, .truth = truth});
     graph.add_flow(*source_output, detector->image, lossless);
     graph.add_flow(detector->detections, reporter->detections, lossless);
     if (!first_detector) {
@@ -438,37 +423,25 @@ int execute(const Options& opts, SignalDomain& signals) {
                         .topologies = {viz::GeometryTopology::kLineList},
                         .max_primitives = static_cast<std::uint32_t>(td::kMaxDetectionsPerFrame) *
                                           td::kOverlayLinesPerTag,
-                        .default_line_width = 4.0F});
+                        .default_line_width = 8.0F});
     layers.add_text_layer(
         "labels", viz::TextLayerDesc{.max_glyphs = static_cast<std::uint32_t>(
                                          td::kMaxDetectionsPerFrame * td::kOverlayLabelBytes),
                                      .normalized_coordinates = true});
-    viz::SinkDesc sink;
-    if (headless) {
-      sink = viz::CudaSinkDesc{.width = static_cast<std::uint32_t>(image_width),
-                               .height = static_cast<std::uint32_t>(image_height)};
-    } else {
-      sink =
-          viz::WindowSinkDesc{.title = "AprilTag Detection (" +
-                                       std::string(td::backend_name(opts.backends.front())) + ")",
-                              .width = static_cast<std::uint32_t>(image_width),
-                              .height = static_cast<std::uint32_t>(image_height)};
-    }
     // Outlines carry their frame's capture time, so they reach Holoviz as old as
     // the detection latency; allow for the slowest backend, or they vanish.
     const auto max_input_age = std::max(4 * period, std::chrono::milliseconds{250});
-    auto visualizer =
-        graph.op<viz::HolovizOp>("holoviz", std::move(layers), std::move(sink),
-                                 viz::FrameTrigger{viz::LayerTrigger{0}}, max_input_age);
+    auto visualizer = graph.op<viz::HolovizOp>(
+        "holoviz", std::move(layers),
+        viz::WindowSinkDesc{.title = "AprilTag Detection (" +
+                                     std::string(td::backend_name(opts.backends.front())) + ")",
+                            .width = static_cast<std::uint32_t>(image_width),
+                            .height = static_cast<std::uint32_t>(image_height)},
+        viz::FrameTrigger{viz::LayerTrigger{0}}, max_input_age);
     // The display is best effort: it keeps the newest sample and never holds
     // back the detectors.
     const holoscan::ConnectionOptions latest{.queue_policy = holoscan::QueuePolicy::kDropOldest,
                                              .queue_depth = 1U};
-    if (headless) {
-      auto snapshot = graph.op<td::RenderSnapshotOp>(
-          "snapshot", td::RenderSnapshotConfig{.output = opts.snapshot, .rendered = rendered});
-      graph.add_flow(visualizer->output(), snapshot->frame, latest);
-    }
     auto overlay = graph.op<td::AprilTagOverlayOp>("overlay");
     graph.add_flow(*source_output, visualizer->image_layer_input(0), latest);
     graph.add_flow((*first_detector)->detections, overlay->detections, latest);
@@ -481,14 +454,10 @@ int execute(const Options& opts, SignalDomain& signals) {
 
   graph.set_default_clock(graph.add_clock<holoscan::RealtimeClock>("clock"));
   holoscan::CompileOptions compile_options;
-  // Device-memory frames and offscreen renders are on GPU 0.
+  // Device-memory frames are on GPU 0.
   if (opts.device_input) {
     compile_options.deployment.bind_tensor_output_device(holoscan::TensorOutputDevicePlacement{
         .operator_path = "source", .output_port = "image", .device = holoscan::DeviceId{0}});
-  }
-  if (headless) {
-    compile_options.deployment.bind_tensor_output_device(holoscan::TensorOutputDevicePlacement{
-        .operator_path = "holoviz", .output_port = "output", .device = holoscan::DeviceId{0}});
   }
   const auto plan = holoscan::compile(graph, std::move(compile_options));
   // Warnings on an accepted plan, as well as the reasons for a rejected one.
@@ -496,9 +465,6 @@ int execute(const Options& opts, SignalDomain& signals) {
     std::cerr << holoscan::format_diagnostics(plan.diagnostics(), plan.graph()) << '\n';
   }
   if (!plan.ok()) {
-    if (env_set("APRILTAG_DEBUG_PLAN")) {
-      std::cerr << plan.json() << '\n';
-    }
     return 1;
   }
   if (opts.compile_only) {
@@ -516,10 +482,10 @@ int execute(const Options& opts, SignalDomain& signals) {
     std::cerr << "; an interrupt ends the process without a report\n";
   }
   auto session = signals ? holoscan::run_async(plan, *signals) : holoscan::run_async(plan);
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds(opts.timeout_seconds) +
+  // A live camera run has no deadline; it ends when stopped.
+  const auto deadline = std::chrono::steady_clock::now() + kTimeoutAllowance +
                         std::chrono::milliseconds(2LL * frames * opts.period_ms);
-  while (session.is_running() && std::chrono::steady_clock::now() < deadline) {
+  while (session.is_running() && (frames == 0 || std::chrono::steady_clock::now() < deadline)) {
     std::this_thread::sleep_for(10ms);
   }
   const bool timed_out = session.is_running();
@@ -546,7 +512,8 @@ int execute(const Options& opts, SignalDomain& signals) {
   }
 
   // A stop request (SIGINT, SIGTERM, a closed window) ends the run early; that
-  // is not a detection failure, but not a pass either.
+  // is not a detection failure, but not a pass either. For a live camera it is
+  // the normal end.
   const bool stopped = !timed_out && termination == holoscan::RunTermination::kStopped;
   bool passed = !timed_out && session.diagnostics().empty() &&
                 termination == holoscan::RunTermination::kRequestedCompleted;
@@ -554,13 +521,8 @@ int execute(const Options& opts, SignalDomain& signals) {
     print_report(*report, frames);
     passed = passed && report->frames == frames && report->passed();
   }
-  if (headless) {
-    // Holoviz drops a frame when it falls behind, but must render some.
-    std::cout << kAppName << ": rendered=" << rendered->load() << '/' << frames << '\n';
-    passed = passed && rendered->load() > 0U;
-  }
   std::cout << kAppName << ": verdict=" << (passed ? "PASS" : stopped ? "STOPPED" : "FAIL") << '\n';
-  return passed ? 0 : 1;
+  return passed || (stopped && frames == 0) ? 0 : 1;
 }
 
 }  // namespace

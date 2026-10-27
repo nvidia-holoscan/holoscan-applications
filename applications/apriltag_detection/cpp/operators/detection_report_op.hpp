@@ -1,17 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// DetectionReportOp: the application's sink. Writes each frame's detections as
-// a JSON line, checks them against the synthetic scene's ground truth when the
-// input is synthetic, keeps latency statistics, and asks the run to complete
-// once every reporter has seen its expected frames.
+// DetectionReportOp: the application's sink. Counts each frame's detections,
+// checks them against the synthetic scene's ground truth when the input is
+// synthetic, keeps latency statistics, and asks the run to complete once every
+// reporter has seen its expected frames.
 
 #pragma once
 
 #include <atomic>
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -68,8 +66,6 @@ struct DetectionReportConfig {
   // Frames after which this reporter is done; 0 never finishes.
   std::uint32_t expected_frames{};
   std::optional<GroundTruth> truth;
-  // Where to write JSON lines; none when empty.
-  std::filesystem::path output;
 };
 
 // Largest corner error, in pixels, a verified detection may have.
@@ -85,7 +81,6 @@ class DetectionReportOp final : public holoscan::Operator<> {
   void setup(holoscan::OperatorSpec& spec) override;
   [[nodiscard]] holoscan::Contract contract() const override;
   void start() override;
-  void stop() override;
   [[nodiscard]] holoscan::expected<void, holoscan::Error> compute(
       holoscan::ExecutionContext& context) override;
 
@@ -95,7 +90,6 @@ class DetectionReportOp final : public holoscan::Operator<> {
   void verify(const schema::AprilTagDetectionsT& message);
 
   DetectionReportConfig config_;
-  std::ofstream output_;
   bool finished_{};
 };
 

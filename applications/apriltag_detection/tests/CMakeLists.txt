@@ -1,10 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# These tests need the SDK, its CUDA toolchain and a GPU. The application has
-# no SDK-free tests to register at the top level.
-option(APRILTAG_DETECTION_TEST_DISPLAY
-  "Also test offscreen Holoviz rendering (needs Vulkan in the test environment)" OFF)
+# These tests need the SDK, its CUDA toolchain and a GPU. The SDK-free YUYV
+# test is registered by the application's top-level CMakeLists.txt.
 
 add_executable(apriltag_backend_accuracy_test backend_accuracy_test.cpp)
 target_link_libraries(apriltag_backend_accuracy_test PRIVATE apriltag_detection_core)
@@ -67,15 +65,21 @@ apriltag_app_test(apriltag_app_rejects_missing_images 2 "^error: "
   --source images --display false)
 apriltag_app_test(apriltag_app_rejects_partial_intrinsics 2 "^error: "
   --source images --images "${_frames}/gray" --fx 900 --display false)
+apriltag_app_test(apriltag_app_rejects_missing_camera 2 "^error: cannot open camera /dev/video99"
+  --source camera --device /dev/video99)
 
-# A run that fails once started: a reporter cannot open its output file. It
-# exits 1 and names the failing operator.
-set(_blocked "${CMAKE_CURRENT_BINARY_DIR}/blocked_output")
-add_test(NAME apriltag_app_failed_run
-  COMMAND ${CMAKE_COMMAND} -DEXPECT_EXIT=1 "-DEXPECT_OUTPUT=report_cuda.*verdict=FAIL"
-    "-DMAKE_DIRECTORY=${_blocked}/cuda.jsonl" -P "${_run_and_match}" --
-    $<TARGET_FILE:apriltag_detection> --backend cuda --count 10 --period-ms 10 --display false
-    --output-dir "${_blocked}")
+# A run that fails once started: the second image of a folder has another
+# channel count. It exits 1 and names the failing operator.
+set(_mixed "${CMAKE_CURRENT_BINARY_DIR}/frames/mixed")
+file(MAKE_DIRECTORY "${_mixed}")
+add_test(NAME apriltag_frames_setup_mixed
+  COMMAND ${CMAKE_COMMAND} -E copy "${_frames}/gray/frame_0000.pgm"
+    "${_frames}/rgb/frame_0001.ppm" "${_mixed}")
+set_tests_properties(apriltag_frames_setup_mixed PROPERTIES
+  FIXTURES_SETUP apriltag_mixed FIXTURES_REQUIRED apriltag_frames)
+apriltag_app_test(apriltag_app_failed_run 1 "every image must match.*verdict=FAIL"
+  --source images --images "${_mixed}" --backend cuda --period-ms 10 --display false)
+set_tests_properties(apriltag_app_failed_run PROPERTIES FIXTURES_REQUIRED apriltag_mixed)
 
 # A stop request ends the run early with its own verdict, and the warning it
 # leaves is shown. (A shell starts background jobs with SIGINT ignored, so the
@@ -96,18 +100,9 @@ add_test(NAME apriltag_app_without_signal_domain
     $<TARGET_FILE:apriltag_detection> --backend cuda --count 10 --period-ms 10 --display false)
 
 if(APRILTAG_DETECTION_ENABLE_VISUALIZATION)
-  # The display graphs compile, with or without a display or Vulkan to run them.
+  # The display graph compiles, with or without a display to run it.
   apriltag_app_test(apriltag_app_display_plan 0 "plan=OK"
     --backend all --display true --compile-only true)
-  apriltag_app_test(apriltag_app_headless_plan 0 "plan=OK"
-    --backend all --display headless --snapshot "${CMAKE_CURRENT_BINARY_DIR}/unused.ppm"
-    --compile-only true)
-endif()
-
-if(APRILTAG_DETECTION_ENABLE_VISUALIZATION AND APRILTAG_DETECTION_TEST_DISPLAY)
-  apriltag_app_test(apriltag_app_headless_display 0 "rendered=[1-9][0-9]*/20.*verdict=PASS"
-    --backend cuda --count 20 --period-ms 20 --display headless
-    --snapshot "${CMAKE_CURRENT_BINARY_DIR}/snapshot.ppm")
 endif()
 
 get_property(_tests DIRECTORY PROPERTY TESTS)

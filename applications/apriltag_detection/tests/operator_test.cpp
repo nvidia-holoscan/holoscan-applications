@@ -5,7 +5,7 @@
 // of each supported encoding and layout in, detections with the scene's ids,
 // corners and poses out, for every compiled backend; a change of image size
 // and non-default options; unsupported images rejected; the detector off the
-// legacy default CUDA stream; the reporter's JSON lines; and the overlay's
+// legacy default CUDA stream; the reporter's counts; and the overlay's
 // Holoviz tensors shaped, scaled and stamped as Holoviz expects.
 
 #include <cuda_runtime_api.h>
@@ -16,8 +16,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -352,36 +350,19 @@ schema::AprilTagDetectionsT one_tag_message(std::uint64_t frame, bool pose) {
   return message;
 }
 
-// The reporter writes one JSON object per frame and counts what it saw.
-void check_report_json_lines() {
-  const std::filesystem::path output =
-      std::filesystem::current_path() / "apriltag_operator_test_report.jsonl";
-  std::filesystem::remove(output);
+// The reporter counts frames, tags and latencies; without ground truth it
+// passes whatever it saw.
+void check_report_counts() {
   auto report = std::make_shared<BackendReport>();
-  auto h = holoscan::testing::create_operator_test<DetectionReportOp>(DetectionReportConfig{
-      .report = report, .completion = std::make_shared<RunCompletion>(), .output = output});
+  auto h = holoscan::testing::create_operator_test<DetectionReportOp>(
+      DetectionReportConfig{.report = report, .completion = std::make_shared<RunCompletion>()});
   h.push("detections", one_tag_message(0, false));
   h.push("detections", one_tag_message(1, true));
   const auto result = h.run();
   VERIFY_MSG(result.ok(), result.describe_failure());
   VERIFY(report->frames == 2 && report->tags == 2 && report->detect_ms.size() == 2);
+  VERIFY(report->detect_ms.front() == 1.5F);
   VERIFY(!report->verified && report->passed());
-
-  std::ifstream file(output);
-  std::vector<std::string> lines;
-  for (std::string line; std::getline(file, line);) lines.push_back(line);
-  VERIFY_MSG(lines.size() == 2, std::to_string(lines.size()) + " lines");
-  if (lines.size() != 2) return;
-  const auto has = [](const std::string& line, const std::string& text) {
-    return line.find(text) != std::string::npos;
-  };
-  VERIFY(has(lines[0], R"({"frame":0,"backend":"cuda","family":"tag36h11","width":200,)"));
-  VERIFY(has(lines[0], R"("detect_ms":1.5,"dropped":0,"tags":[{"id":7,"hamming":0,)"));
-  VERIFY(has(lines[0], R"("corners":[[20,80],[80,80],[80,20],[20,20]]})"));
-  VERIFY(!has(lines[0], "rotation"));
-  VERIFY(has(lines[1], R"("rotation":[1,0,0,0,1,0,0,0,1],"translation":[0.25,-0.5,2])"));
-  VERIFY(lines[0].back() == '}' && lines[1].back() == '}');
-  std::filesystem::remove(output);
 }
 
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
@@ -486,7 +467,7 @@ int main() {
   cases.push_back({"detector forwards provenance", tag_detection::check_detector_provenance});
   cases.push_back({"detector keeps off the legacy default stream with host input",
                    tag_detection::check_detector_stream_with_host_input});
-  cases.push_back({"reporter JSON lines", tag_detection::check_report_json_lines});
+  cases.push_back({"reporter counts", tag_detection::check_report_counts});
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
   cases.push_back({"overlay layers", tag_detection::check_overlay});
   cases.push_back({"overlay stamps unstamped detections", tag_detection::check_overlay_unstamped});
