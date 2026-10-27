@@ -35,7 +35,7 @@ repos:
         args: [--markdown-linebreak-ext=md]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: f12be1ebaa5351c1fc76472de98db2c3446c8253  # frozen: v0.16.10
+    rev: f368fb366ff7f2f808dd324b83a6d32267799e19  # frozen: v0.17.2
     hooks:
       - id: ruff-check
         args: [--fix]
@@ -62,14 +62,14 @@ repos:
         args: [--quiet]
 
   - repo: https://github.com/cmake-lint/cmake-lint
-    rev: 7c644095eb566fa805839ad53b733f7bcdb73032  # frozen: 1.4.3
+    rev: acef3a10f071a8b449a8f5c017d8572bd853385b  # frozen: 1.4.3
     hooks:
       - id: cmakelint
         args:
           - --filter=-whitespace/indent,-linelength,-readability/wonkycase,-convention/filename,-package/stdargs
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: 916ad0aaa108c64d294101002066f530ea170b10  # frozen: v0.23.3
+    rev: 341e2a331ba578029e66c2e01183e7a6b5ca9ab4  # frozen: v0.24.0
     hooks:
       - id: markdownlint-cli2
         language_version: "24.21.0"
