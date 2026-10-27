@@ -20,15 +20,36 @@ operators, tests, and data preparation. Related contributions belong in:
 - [Holoscan SDK issues](https://github.com/nvidia-holoscan/holoscan-sdk/issues)
   for SDK bugs and feature requests.
 
+## Before you contribute an application
+
+Holoscan Applications accepts applications from NVIDIA teams and external
+contributors. We filter each contribution request on a case-by-case basis to
+consider ecosystem and business relations. When we choose to accept a
+contribution, we ask that the contributing team commits to maintaining a high
+software quality bar. In many or most cases we will recommend that you develop
+and maintain your application in a standalone repository instead.
+
+Contributing an application here means:
+
+- You have tests and continuous integration (CI) in place before your first
+  contribution. NVIDIA teams must coordinate their application's SDK, GPU, and
+  hardware needs with the maintainers before opening a pull request. External
+  contributors must show that CI already builds and tests the application, for
+  example with passing runs in their own repository.
+- You are responsible to maintain the application after it merges. Please name
+  its maintainers in the pull request, and fix CI failures and SDK
+  incompatibilities as they arise.
+
+Applications that are no longer maintained may be deprecated and removed at
+any time.
+
 ## Development setup
 
-From the repository root, use Python 3.12–3.14 to install the pinned repository
-tools. This example uses Python 3.12:
+Install the pinned repository tools as described in
+[Getting started](README.md#getting-started); `requirements.txt` includes the
+Holoscan CLI and the lint tools. Then, from the repository root:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
 holoscan lint
 ```
 
