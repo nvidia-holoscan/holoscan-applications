@@ -94,7 +94,12 @@ repos:
       - id: holoscan-metadata-validate
         name: validate Holoscan metadata
         entry: python3 .github/scripts/validate_metadata.py
-        # Use the CLI and jsonschema installed from requirements.txt.
-        language: system
+        language: python
+        # Keep these pins aligned with requirements.txt. pre-commit installs
+        # them into the hook environment so the check does not depend on the
+        # host interpreter (pre-commit.ci does not install requirements.txt).
+        additional_dependencies:
+          - holoscan-cli==5.0.0
+          - jsonschema>=4.18,<5
         files: '(^|/)metadata\.json$'
         types: [json]
