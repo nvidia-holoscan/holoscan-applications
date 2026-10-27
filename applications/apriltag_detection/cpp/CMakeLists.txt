@@ -118,6 +118,13 @@ endif()
 
 add_executable(apriltag_detection main.cpp)
 target_link_libraries(apriltag_detection PRIVATE apriltag_detection_operators)
+# On Jetson, VPI loads Tegra's EGL driver, after which Holoviz cannot create its Vulkan instance
+# unless the Vulkan loader was loaded first: link the loader ahead of everything else.
+if(APRILTAG_DETECTION_ENABLE_VISUALIZATION AND vpi_FOUND)
+  find_library(APRILTAG_DETECTION_VULKAN_LOADER NAMES vulkan REQUIRED)
+  target_link_options(apriltag_detection BEFORE PRIVATE "LINKER:--push-state,--no-as-needed"
+    "${APRILTAG_DETECTION_VULKAN_LOADER}" "LINKER:--pop-state")
+endif()
 # Place the executable in the application's build directory, where the CLI
 # starts the run commands from metadata.json.
 set_target_properties(apriltag_detection PROPERTIES
