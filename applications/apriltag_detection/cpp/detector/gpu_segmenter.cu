@@ -622,10 +622,9 @@ void GpuSegmenter::run_cub(int stage, void* temp, std::size_t& bytes, cudaStream
   cudaError_t status = cudaSuccess;
   switch (stage) {
     case 0:  // Group the points by component pair.
-      status =
-          cub::DeviceRadixSort::SortPairs(temp, bytes, b.keys.get(), b.sorted_keys.get(),
-                                          b.points.get(), b.sorted_points.get(), n, 0,
-                                          2 * component_bits_, stream);
+      status = cub::DeviceRadixSort::SortPairs(temp, bytes, b.keys.get(), b.sorted_keys.get(),
+                                               b.points.get(), b.sorted_points.get(), n, 0,
+                                               2 * component_bits_, stream);
       break;
     case 1:
       status =
@@ -637,10 +636,9 @@ void GpuSegmenter::run_cub(int stage, void* temp, std::size_t& bytes, cudaStream
                                              n, stream);
       break;
     case 3:  // Every cluster in angular order.
-      status =
-          cub::DeviceRadixSort::SortPairs(temp, bytes, b.keys.get(), b.sorted_keys.get(),
-                                          b.sorted_points.get(), b.points.get(), n, 0,
-                                          32 + cluster_bits_, stream);
+      status = cub::DeviceRadixSort::SortPairs(temp, bytes, b.keys.get(), b.sorted_keys.get(),
+                                               b.sorted_points.get(), b.points.get(), n, 0,
+                                               32 + cluster_bits_, stream);
       break;
     case 4:  // Drop repeated points.
       status = cub::DeviceSelect::Flagged(temp, bytes, index, b.keep.get(), b.unique_index.get(),

@@ -271,8 +271,7 @@ void AprilTagDetectorOp::warn_overflow(const Overflow& overflow) {
   HOLOSCAN_LOG_WARN(
       "AprilTagDetectorOp ({} backend): {} frame(s) over capacity since the last warning; the "
       "latest dropped {} boundary points, {} quad candidates, {} quads and {} detections{}",
-      backend_->name(),
-      overflowed_frames_, overflow.points, overflow.candidates, overflow.quads,
+      backend_->name(), overflowed_frames_, overflow.points, overflow.candidates, overflow.quads,
       overflow.detections, overflow.truncated() ? ", so tags may be missing" : "");
   overflowed_frames_ = 0;
   last_overflow_warning_ = now;

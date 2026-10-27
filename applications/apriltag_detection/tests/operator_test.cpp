@@ -252,9 +252,9 @@ void check_detector_provenance() {
   VERIFY(metadata.source_clock_id.valid() && metadata.capture_timestamp_ns == kCaptured.count());
   VERIFY_MSG(metadata.frame_id == kFrameId,
              "frame id " + std::to_string(metadata.frame_id) + " forwarded");
-  VERIFY_MSG(samples.front().data.device_sequence == kSequence,
-             "device sequence " + std::to_string(samples.front().data.device_sequence) +
-                 " forwarded");
+  VERIFY_MSG(
+      samples.front().data.device_sequence == kSequence,
+      "device sequence " + std::to_string(samples.front().data.device_sequence) + " forwarded");
 }
 
 // How long the unrelated stream below is held.
@@ -401,18 +401,18 @@ schema::AprilTagDetectionsT truth_message(std::uint32_t frame) {
     float cx = 0.0F;
     float cy = 0.0F;
     for (int c = 0; c < 4; ++c) {
-      corners[c] = schema::Point2f(static_cast<float>(projected[c][0]),
-                                   static_cast<float>(projected[c][1]));
+      corners[c] =
+          schema::Point2f(static_cast<float>(projected[c][0]), static_cast<float>(projected[c][1]));
       cx += corners[c].x() / 4.0F;
       cy += corners[c].y() / 4.0F;
     }
     const std::array<float, 9> rotation{};
     const std::array<float, 3> translation{};
-    message.detections.push_back(schema::TagDetection(
-        tag.id, 0, 50.0F, schema::Point2f(cx, cy),
-        ::flatbuffers::span<const schema::Point2f, 4>(corners), false,
-        ::flatbuffers::span<const float, 9>(rotation),
-        ::flatbuffers::span<const float, 3>(translation), 0.0F));
+    message.detections.push_back(
+        schema::TagDetection(tag.id, 0, 50.0F, schema::Point2f(cx, cy),
+                             ::flatbuffers::span<const schema::Point2f, 4>(corners), false,
+                             ::flatbuffers::span<const float, 9>(rotation),
+                             ::flatbuffers::span<const float, 3>(translation), 0.0F));
   }
   return message;
 }
@@ -422,10 +422,10 @@ schema::AprilTagDetectionsT truth_message(std::uint32_t frame) {
 void check_report_truth() {
   const auto run = [](std::vector<schema::AprilTagDetectionsT> messages) {
     auto report = std::make_shared<BackendReport>();
-    auto h = holoscan::testing::create_operator_test<DetectionReportOp>(DetectionReportConfig{
-        .report = report,
-        .remaining = std::make_shared<std::atomic<int>>(),
-        .truth = GroundTruth{"tag36h11", kWidth, kHeight}});
+    auto h = holoscan::testing::create_operator_test<DetectionReportOp>(
+        DetectionReportConfig{.report = report,
+                              .remaining = std::make_shared<std::atomic<int>>(),
+                              .truth = GroundTruth{"tag36h11", kWidth, kHeight}});
     for (auto& message : messages) h.push("detections", std::move(message));
     return std::make_pair(h.run().ok(), report);
   };
@@ -579,8 +579,8 @@ int main() {
   cases.push_back({"detector keeps off the legacy default stream with host input",
                    tag_detection::check_detector_stream_with_host_input});
   cases.push_back({"reporter counts", tag_detection::check_report_counts});
-  cases.push_back({"reporter keys ground truth on the source's numbering",
-                   tag_detection::check_report_truth});
+  cases.push_back(
+      {"reporter keys ground truth on the source's numbering", tag_detection::check_report_truth});
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
   cases.push_back({"overlay layers", tag_detection::check_overlay});
   cases.push_back({"overlay axes with a pose", tag_detection::check_overlay_pose});

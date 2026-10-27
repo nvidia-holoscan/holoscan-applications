@@ -147,8 +147,8 @@ class VpiBackend final : public DetectorBackend {
         corners[c][0] = element->corners[c].x;
         corners[c][1] = element->corners[c].y;
       }
-      result.tags.push_back(make_detection(element->id, element->correctedBits, element->decisionMargin,
-                                           center, corners));
+      result.tags.push_back(make_detection(element->id, element->correctedBits,
+                                           element->decisionMargin, center, corners));
     }
     return result;
   }

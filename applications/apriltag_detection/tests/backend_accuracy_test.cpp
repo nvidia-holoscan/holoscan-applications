@@ -57,8 +57,8 @@ double rotation_error_deg(const std::array<double, 9>& a, const std::array<doubl
 }
 
 FrameDetections run_backend(DetectorBackend& backend, const std::vector<std::uint8_t>& gray,
-                            GrayConverter& converter, cudaStream_t stream, std::uint8_t* device_copy,
-                            bool device_input) {
+                            GrayConverter& converter, cudaStream_t stream,
+                            std::uint8_t* device_copy, bool device_input) {
   ImageView view{gray.data(), kWidth, kHeight, kWidth, PixelFormat::kMono8, MemoryLocation::kHost};
   if (device_input) {
     cudaMemcpy(device_copy, gray.data(), gray.size(), cudaMemcpyHostToDevice);
@@ -185,8 +185,10 @@ void check_edge_tags(Backend kind) {
     const auto gray = render_scene(scene, 1);
     const ImageView view{gray.data(),          kWidth, kHeight, kWidth, PixelFormat::kMono8,
                          MemoryLocation::kHost};
-    const auto expected = reference->detect(
-        reference_converter.convert(view, MemoryLocation::kHost, nullptr), nullptr).tags;
+    const auto expected =
+        reference
+            ->detect(reference_converter.convert(view, MemoryLocation::kHost, nullptr), nullptr)
+            .tags;
     const auto found =
         backend->detect(converter.convert(view, backend->input_location(), nullptr), nullptr).tags;
     reference_tags += static_cast<int>(expected.size());
@@ -274,10 +276,12 @@ Overflow checkerboard_overflow(int square) {
     }
   }
   const FrameDetections found = run_backend(*backend, board, converter, nullptr, nullptr, false);
-  std::printf("  cuda     %d px checkerboard: %zu tags, dropped %u points, %u candidates, %u quads\n",
-              square, found.tags.size(), found.overflow.points, found.overflow.candidates,
-              found.overflow.quads);
-  VERIFY_MSG(found.tags.empty(), std::to_string(found.tags.size()) + " tags found in a checkerboard");
+  std::printf(
+      "  cuda     %d px checkerboard: %zu tags, dropped %u points, %u candidates, %u quads\n",
+      square, found.tags.size(), found.overflow.points, found.overflow.candidates,
+      found.overflow.quads);
+  VERIFY_MSG(found.tags.empty(),
+             std::to_string(found.tags.size()) + " tags found in a checkerboard");
   VERIFY_MSG(found.overflow.truncated(), "the checkerboard's dropped work is reported");
   return found.overflow;
 }
@@ -324,9 +328,9 @@ void check_detection_overflow(Backend kind) {
   VERIFY_MSG(found.tags.size() == kMaxDetectionsPerFrame,
              std::to_string(found.tags.size()) + " tags reported");
   // VPI discards what does not fit its array without counting it.
-  VERIFY_MSG(kind == Backend::kVpi ? found.overflow.detections >= 1
-                                   : found.overflow.detections == excess,
-             std::to_string(found.overflow.detections) + " tags counted as dropped");
+  VERIFY_MSG(
+      kind == Backend::kVpi ? found.overflow.detections >= 1 : found.overflow.detections == excess,
+      std::to_string(found.overflow.detections) + " tags counted as dropped");
   VERIFY_MSG(!found.overflow.truncated(), "nothing before decoding is dropped");
   const TruthCounts counts = match_truth(scene, found.tags, [](const TruthMatch&) {});
   VERIFY_MSG(counts.extra == 0, std::to_string(counts.extra) + " reported tags are not real");
