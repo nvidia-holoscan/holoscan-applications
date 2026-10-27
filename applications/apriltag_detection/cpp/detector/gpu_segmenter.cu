@@ -12,7 +12,7 @@
 #include <cub/device/device_run_length_encode.cuh>  // NOLINT(build/include_order)
 #include <cub/device/device_scan.cuh>               // NOLINT(build/include_order)
 #include <cub/device/device_select.cuh>             // NOLINT(build/include_order)
-#include <cuda/iterator>                            // NOLINT(build/include_order)
+#include <thrust/iterator/counting_iterator.h>      // NOLINT(build/include_order)
 
 #include "gpu_segmenter.hpp"
 
@@ -654,7 +654,7 @@ GpuSegmenter::~GpuSegmenter() = default;
 void GpuSegmenter::run_cub(int stage, void* temp, std::size_t& bytes, cudaStream_t stream) {
   Buffers& b = *buffers_;
   const auto n = static_cast<int>(capacity_);
-  const cuda::counting_iterator<std::uint32_t> index{0U};
+  const thrust::counting_iterator<std::uint32_t> index{0U};
   cudaError_t status = cudaSuccess;
   switch (stage) {
     case 0:  // Group the points by component pair.
