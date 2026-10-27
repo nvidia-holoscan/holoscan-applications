@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include "cpu_backend.hpp"
-
 // The AprilTag 3 library's C API.
 extern "C" {
 #include <apriltag.h>
@@ -17,6 +15,7 @@ extern "C" {
 #include <utility>
 #include <vector>
 
+#include "detector_backend.hpp"
 #include "tag_family.hpp"
 
 namespace tag_detection {

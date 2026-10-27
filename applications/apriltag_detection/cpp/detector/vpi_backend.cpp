@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include "vpi_backend.hpp"
+// NVIDIA VPI's AprilTag detector on the PVA (Jetson Orin and Thor) or the CPU.
+// VPI has no CUDA AprilTag detector.
 
 // VPI's C API.
 extern "C" {
@@ -24,6 +25,7 @@ extern "C" {
 #include <utility>
 #include <vector>
 
+#include "detector_backend.hpp"
 #include "tag_family.hpp"
 
 namespace tag_detection {
@@ -32,6 +34,12 @@ namespace {
 // VPI places pixel centers at +0.5, like the AprilTag 3 library; reported
 // coordinates put them at integers.
 constexpr double kPixelCenterShift = 0.5;
+// The image sides the PVA detector accepts, as measured with VPI 4 on Jetson
+// Thor: below 256 it refuses the payload, above 4096 the launch, and a side one
+// pixel past a multiple of 128 builds but fails every detect.
+constexpr bool pva_side_usable(int side) noexcept {
+  return side >= 256 && side <= 4096 && side % 128 != 1;
+}
 // Results the detector can return per frame. VPI writes no more than this.
 constexpr std::int32_t kMaxDetections = 256;
 

@@ -1,46 +1,53 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The GPU half of the CUDA backend. It decimates the image, thresholds it
+// The first half of the CUDA backend. It decimates the image, thresholds it
 // adaptively, labels connected components, and gathers the boundary points
 // between each pair of adjacent black and white components (a cluster, a
 // candidate tag border). It orders each cluster's points by angle, accumulates
-// their line-fit moments, scores how badly a line fits around each point, and
-// keeps each cluster's best corner candidates. The host (quad_fit.hpp) then
-// only chooses four corners per cluster and fits the edges between them.
+// their line-fit moments, and scores how badly a line fits around each point;
+// the local maxima of that score are the cluster's corner candidates.
+//
+// Every buffer has a fixed capacity and every count stays on the device, so a
+// frame needs no host synchronization.
 
 #pragma once
 
 #include <cuda_runtime_api.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <vector>
+#include <stdexcept>
+#include <string>
 
 #include "detection.hpp"
-
-#if defined(__CUDACC__)
-#define TAG_DETECTION_HOST_DEVICE __host__ __device__
-#else
-#define TAG_DETECTION_HOST_DEVICE
-#endif
+#include "homography.hpp"  // TAG_DETECTION_HOST_DEVICE
 
 namespace tag_detection {
 
-// One boundary point between a black and a white pixel of the decimated image,
-// at twice the decimated resolution: (x, y) is the midpoint of the two pixel
-// centers times two. (gx, gy) points from the dark pixel to the bright one, and
-// `weight` is the gray image's gradient magnitude there, plus one.
-struct EdgePoint {
-  std::int16_t x;
-  std::int16_t y;
-  std::int8_t gx;
-  std::int8_t gy;
-  std::uint16_t weight;
+inline void cuda_check(cudaError_t status, const char* what) {
+  if (status != cudaSuccess) {
+    throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(status));
+  }
+}
+
+// `count` elements of device memory, released on destruction.
+template <typename T>
+class DeviceBuffer {
+ public:
+  explicit DeviceBuffer(std::size_t count) {
+    cuda_check(cudaMalloc(reinterpret_cast<void**>(&data_), (count > 0 ? count : 1) * sizeof(T)),
+               "cudaMalloc");
+  }
+  ~DeviceBuffer() { cudaFree(data_); }
+  DeviceBuffer(const DeviceBuffer&) = delete;
+  DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+  [[nodiscard]] T* get() const noexcept { return data_; }
+
+ private:
+  T* data_{};
 };
-static_assert(sizeof(EdgePoint) == sizeof(std::uint64_t));
 
 // Weighted sums for fitting a line to points: x and y in decimated pixels with
 // centers at +0.5, the units the fit thresholds are given in.
@@ -55,43 +62,42 @@ struct LineMoments {
   }
 };
 
-// Corner candidates kept per cluster, as in AprilTag 3.
-inline constexpr int kMaxCornerCandidates = 10;
-
-// A point of a cluster where a line fits its neighborhood worst.
-struct CornerCandidate {
-  std::uint32_t index{};  // Into the cluster's angle-ordered, duplicate-free points.
-  double error{};         // The smoothed line-fit error there.
-  LineMoments through{};  // Moments of the cluster's points 0 .. index.
-  LineMoments before{};   // Moments of the cluster's points 0 .. index - 1.
+// Counts the segmenter leaves on the device for each frame.
+struct SegmentCounts {
+  std::uint32_t points;  // Boundary points found; those past the capacity are dropped.
+  std::uint32_t runs;    // Point runs after sorting, including the padding run.
+  std::uint32_t unique;  // Points left after repeated points are removed.
+  std::uint32_t maxima;  // Corner candidates over all clusters.
 };
 
-struct ClusterSummary {
-  std::uint32_t raw_points{};  // Boundary points before duplicates were removed.
-  std::uint32_t points{};      // Angle-ordered points without duplicates.
-  std::uint32_t candidates{};  // Corner candidates kept, at most kMaxCornerCandidates.
-  // Bounding box in EdgePoint coordinates: x min, x max, y min, y max.
-  std::int32_t box[4]{};
+// The segmenter's results, in device memory, for cluster c < clusters():
+// its points offsets[c] .. offsets[c] + point_counts[c] - 1 in angular order, and its
+// corner candidates maxima[maxima_offsets[c]] .. + maxima_counts[c] - 1 (point
+// indices, in order).
+struct ClusterData {
+  const SegmentCounts* counts;
+  std::uint32_t capacity;
+  const std::uint32_t* raw_points;  // Boundary points before repeats were removed.
+  const std::uint32_t* offsets;
+  const std::uint32_t* point_counts;
+  const std::int32_t* box;  // Per cluster in doubled decimated pixels: x min, x max, y min, y max.
   // Sum over the points of (point - center) . gradient: positive when the
   // inside of the cluster is darker than its outside.
-  double polarity{};
-  LineMoments total{};
-};
+  const double* polarity;
+  const LineMoments* prefix;  // Inclusive per-cluster prefix sums of the points' moments.
+  const double* smoothed;     // The smoothed line-fit error at each point.
+  const std::uint32_t* maxima;
+  const std::uint32_t* maxima_offsets;
+  const std::uint32_t* maxima_counts;
 
-// Every cluster's summary, and its candidates in index order at
-// corners[c * kMaxCornerCandidates] .. + clusters[c].candidates.
-struct QuadCandidates {
-  std::vector<ClusterSummary> clusters;
-  std::vector<CornerCandidate> corners;
-  // The decimated image size.
-  int width{};
-  int height{};
+#if defined(__CUDACC__)
+  // Clusters in this frame: the runs, less the run of padding when there is one.
+  __device__ std::uint32_t clusters() const {
+    const std::uint32_t found = counts->points < capacity ? counts->points : capacity;
+    return counts->runs - (found < capacity ? 1U : 0U);
+  }
+#endif
 };
-
-// The point each cluster's points are ordered about: its bounding box's center,
-// nudged so that no point lies exactly on it. In EdgePoint coordinates.
-inline constexpr float kCenterNudgeX = 0.05118F;
-inline constexpr float kCenterNudgeY = -0.028581F;
 
 class GpuSegmenter {
  public:
@@ -102,13 +108,24 @@ class GpuSegmenter {
   GpuSegmenter(const GpuSegmenter&) = delete;
   GpuSegmenter& operator=(const GpuSegmenter&) = delete;
 
-  // Segments `image` (device memory, the configured size) on `stream` and
-  // returns each cluster's corner candidates on the host. Synchronizes `stream`.
+  // Enqueues the segmentation of `image` (device memory, the configured size)
+  // on `stream`; the results are in data() once it has run.
   // @throws std::runtime_error on a CUDA failure.
-  [[nodiscard]] QuadCandidates segment(const GrayImageView& image, cudaStream_t stream);
+  void segment(const GrayImageView& image, cudaStream_t stream);
+
+  [[nodiscard]] ClusterData data() const noexcept;
+  // Most boundary points, and so clusters, a frame can hold.
+  [[nodiscard]] std::uint32_t capacity() const noexcept { return capacity_; }
+  // Longest cluster that can still be a tag border inside the image.
+  [[nodiscard]] std::uint32_t max_cluster_points() const noexcept {
+    return static_cast<std::uint32_t>(3 * (2 * dec_width_ + 2 * dec_height_));
+  }
 
  private:
   struct Buffers;
+  // Runs CUB call `stage` over the whole capacity; with `temp` null it only
+  // sizes its scratch.
+  void run_cub(int stage, void* temp, std::size_t& bytes, cudaStream_t stream);
 
   int width_;
   int height_;
@@ -118,7 +135,7 @@ class GpuSegmenter {
   int dec_height_;
   int tiles_x_;
   int tiles_y_;
-  std::size_t capacity_;  // Most edge points, and so clusters, a frame can produce.
+  std::uint32_t capacity_;
   std::unique_ptr<Buffers> buffers_;
 };
 

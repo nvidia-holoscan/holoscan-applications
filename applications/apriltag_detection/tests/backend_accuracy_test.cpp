@@ -3,8 +3,8 @@
 //
 // Every compiled backend against the synthetic scene's ground truth: each tag
 // found with its id, corners in order and in place, poses close, and nothing
-// else reported. Also checks the backends agree with each other, and the CUDA
-// backend's buffer growth on images with many more edges than tags.
+// else reported. Also checks the CUDA backend against the CPU reference on tags
+// cut by the image edge, and on images with more edges than its buffers hold.
 
 #include <cuda_runtime_api.h>
 
@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "detector/detector_backend.hpp"
-#include "detector/device_vector.hpp"
 #include "detector/gray_converter.hpp"
 #include "detector/pose.hpp"
 #include "detector/synthetic_scene.hpp"
@@ -234,25 +233,10 @@ void check_edge_tags(Backend kind) {
              "the edge scene clips some tags");
 }
 
-// The segmenter's buffers grow by half again, so a slowly rising requirement
-// does not free and reallocate (synchronizing the device) on every frame.
-void check_device_vector_growth() {
-  DeviceVector<std::uint32_t> buffer(100);
-  VERIFY(buffer.capacity() == 100 && buffer.get() != nullptr);
-  buffer.reserve(101);
-  VERIFY_MSG(buffer.capacity() == 150,
-             "grows to 150 elements, not " + std::to_string(buffer.capacity()));
-  const std::uint32_t* grown = buffer.get();
-  buffer.reserve(150);
-  VERIFY_MSG(buffer.get() == grown && buffer.capacity() == 150, "reuses room it already has");
-  buffer.reserve(1000);
-  VERIFY(buffer.capacity() == 1000);
-}
-
 // Vertical black and white stripes one or two decimated pixels wide: every
-// pixel borders another component, far more boundary points than the CUDA
-// backend's first buffers hold, so it must grow them and gather again. Nothing
-// is a tag; a scene detected afterwards still is.
+// pixel borders another component, more boundary points than the CUDA
+// backend's fixed buffers hold, so the excess is dropped. Nothing is a tag; a
+// scene detected afterwards still is.
 void check_dense_edges() {
   DetectorOptions options;
   auto backend = create_backend(Backend::kCuda, options, kWidth, kHeight);
@@ -311,7 +295,6 @@ int main() {
     cases.push_back({std::string(tag_detection::backend_name(backend)) + " tags cut by the edge",
                      [=] { tag_detection::check_edge_tags(backend); }});
   }
-  cases.push_back({"device buffers grow by half", tag_detection::check_device_vector_growth});
-  cases.push_back({"cuda many more edges than buffers", tag_detection::check_dense_edges});
+  cases.push_back({"cuda more edges than its buffers hold", tag_detection::check_dense_edges});
   return tag_detection::testing::run(cases);
 }

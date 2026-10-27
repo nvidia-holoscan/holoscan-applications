@@ -11,12 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "cpu_backend.hpp"
-#include "cuda_backend.hpp"
 #include "tag_family.hpp"
-#if APRILTAG_DETECTION_WITH_VPI
-#include "vpi_backend.hpp"
-#endif
 
 namespace tag_detection {
 namespace {

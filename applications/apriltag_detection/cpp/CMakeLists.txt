@@ -71,16 +71,16 @@ endif()
 # The detector library: backends, pose, synthetic scenes. No Holoscan.
 add_library(apriltag_detection_core STATIC
   detector/cpu_backend.cpp
-  detector/cuda_backend.cpp
+  detector/cuda_backend.cu
   detector/detector_backend.cpp
   detector/gpu_segmenter.cu
   detector/gray_converter.cu
   detector/pnm_image.cpp
   detector/pose.cpp
-  detector/quad_fit.cpp
   detector/synthetic_scene.cpp
-  detector/tag_decoder.cpp
   detector/tag_family.cpp)
+# No FMA contraction in the quad fit and decoder, so they round as on a CPU.
+set_source_files_properties(detector/cuda_backend.cu PROPERTIES COMPILE_OPTIONS --fmad=false)
 target_compile_features(apriltag_detection_core PUBLIC cxx_std_20 cuda_std_20)
 target_include_directories(apriltag_detection_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(apriltag_detection_core PUBLIC CUDA::cudart ${APRILTAG_TARGET})
@@ -109,7 +109,7 @@ target_link_libraries(apriltag_detection_operators PUBLIC
   apriltag_detection_core apriltag_detections_schema holoscan::core holoscan::sensor_io)
 if(APRILTAG_DETECTION_ENABLE_VISUALIZATION)
   target_sources(apriltag_detection_operators PRIVATE
-    operators/apriltag_overlay_op.cpp operators/render_snapshot_op.cpp)
+    operators/apriltag_overlay_op.cpp)
   target_link_libraries(apriltag_detection_operators PUBLIC
     holoscan::visualization::op_holoviz)
 endif()

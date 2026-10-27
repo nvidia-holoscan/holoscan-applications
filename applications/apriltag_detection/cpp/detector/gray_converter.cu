@@ -1,20 +1,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#include <stdexcept>
-#include <string>
-#include <string_view>
-
+#include "gpu_segmenter.hpp"  // cuda_check
 #include "gray_converter.hpp"
 
 namespace tag_detection {
 namespace {
-
-void check(cudaError_t status, std::string_view what) {
-  if (status != cudaSuccess) {
-    throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(status));
-  }
-}
 
 // BT.601 luma in 8-bit fixed point.
 __host__ __device__ inline std::uint8_t luma(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
@@ -86,8 +77,8 @@ void GrayConverter::reserve(int width, int height) {
   }
   release();
   const std::size_t bytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-  check(cudaMallocHost(reinterpret_cast<void**>(&host_gray_), bytes), "cudaMallocHost(gray)");
-  check(cudaMalloc(reinterpret_cast<void**>(&device_gray_), bytes), "cudaMalloc(gray)");
+  cuda_check(cudaMallocHost(reinterpret_cast<void**>(&host_gray_), bytes), "cudaMallocHost(gray)");
+  cuda_check(cudaMalloc(reinterpret_cast<void**>(&device_gray_), bytes), "cudaMalloc(gray)");
   width_ = width;
   height_ = height;
 }
@@ -116,9 +107,9 @@ GrayImageView GrayConverter::convert(const ImageView& input, MemoryLocation targ
     if (target == MemoryLocation::kHost) {
       return host;
     }
-    check(cudaMemcpy2DAsync(device_gray_, width, gray, gray_pitch, width, height,
-                            cudaMemcpyHostToDevice, stream),
-          "cudaMemcpy2DAsync(gray to device)");
+    cuda_check(cudaMemcpy2DAsync(device_gray_, width, gray, gray_pitch, width, height,
+                                 cudaMemcpyHostToDevice, stream),
+               "cudaMemcpy2DAsync(gray to device)");
     return device;
   }
 
@@ -129,17 +120,17 @@ GrayImageView GrayConverter::convert(const ImageView& input, MemoryLocation targ
     const dim3 grid((input.width + block.x - 1) / block.x, (input.height + block.y - 1) / block.y);
     to_gray_kernel<<<grid, block, 0, stream>>>(input.data, input.pitch, input.format, input.width,
                                                input.height, device_gray_);
-    check(cudaGetLastError(), "to_gray_kernel");
+    cuda_check(cudaGetLastError(), "to_gray_kernel");
     gray = device_gray_;
     gray_pitch = width;
   }
   if (target == MemoryLocation::kDevice) {
     return device;
   }
-  check(cudaMemcpy2DAsync(host_gray_, width, gray, gray_pitch, width, height,
-                          cudaMemcpyDeviceToHost, stream),
-        "cudaMemcpy2DAsync(gray to host)");
-  check(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
+  cuda_check(cudaMemcpy2DAsync(host_gray_, width, gray, gray_pitch, width, height,
+                               cudaMemcpyDeviceToHost, stream),
+             "cudaMemcpy2DAsync(gray to host)");
+  cuda_check(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
   return host;
 }
 

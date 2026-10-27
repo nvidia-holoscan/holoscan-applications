@@ -56,4 +56,22 @@ void check_available(Backend backend);
                                                               const DetectorOptions& options,
                                                               int width, int height);
 
+// Each backend's factory, in its own source file. create_backend validates
+// their arguments first.
+// The AprilTag 3 reference detector on a host image.
+[[nodiscard]] std::unique_ptr<DetectorBackend> create_cpu_backend(const DetectorOptions& options,
+                                                                  int width, int height);
+// Segmentation, quad fitting and decoding on the GPU, reading a device image.
+[[nodiscard]] std::unique_ptr<DetectorBackend> create_cuda_backend(const DetectorOptions& options,
+                                                                   int width, int height);
+#if APRILTAG_DETECTION_WITH_VPI
+// VPI's detector on the PVA or the CPU; `backend` is kVpi, kVpiPva or kVpiCpu.
+[[nodiscard]] std::unique_ptr<DetectorBackend> create_vpi_backend(Backend backend,
+                                                                  const DetectorOptions& options,
+                                                                  int width, int height);
+// Whether VPI reports a PVA on this platform.
+// @throws std::runtime_error if VPI cannot be queried.
+[[nodiscard]] bool vpi_platform_has_pva();
+#endif
+
 }  // namespace tag_detection

@@ -20,7 +20,7 @@ namespace tag_detection {
 // Where a backend runs its detection stage.
 enum class Backend : std::uint8_t {
   kCpu,     // AprilTag 3 reference library on the CPU.
-  kCuda,    // Segmentation and clustering on the GPU, quad fitting and decoding on the CPU.
+  kCuda,    // The whole detector on the GPU.
   kVpi,     // VPI: the PVA when the platform has one, the CPU otherwise.
   kVpiPva,  // VPI on the PVA only (Jetson Orin and Thor).
   kVpiCpu,  // VPI on the CPU only.
