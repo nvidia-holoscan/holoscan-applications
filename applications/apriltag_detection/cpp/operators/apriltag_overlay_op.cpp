@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <utility>
@@ -150,7 +151,15 @@ holoscan::expected<void, holoscan::Error> AprilTagOverlayOp::compute(
               .color = kLabelColor};
           std::memcpy(row, &header, sizeof(header));
           char text[kOverlayLabelBytes + 1] = {};
-          std::snprintf(text, sizeof(text), "id %d", tag.id());
+          if (tag.has_pose()) {
+            // The tag's distance from the camera.
+            const auto* t3 = tag.translation();
+            std::snprintf(text, sizeof(text), "id %d %.2fm", tag.id(),
+                          std::sqrt(t3->Get(0) * t3->Get(0) + t3->Get(1) * t3->Get(1) +
+                                    t3->Get(2) * t3->Get(2)));
+          } else {
+            std::snprintf(text, sizeof(text), "id %d", tag.id());
+          }
           std::memcpy(row + holoscan::visualization::kTextRunHeaderBytes, text, std::strlen(text));
         }
         return {};

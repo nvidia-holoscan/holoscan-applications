@@ -202,8 +202,8 @@ Options parse_args(int argc, char** argv) {
     throw std::invalid_argument("--fx, --fy, --cx and --cy go together");
   }
   if (given == 4) {
-    if (opts.source != Source::kImages) {
-      throw std::invalid_argument("--fx..--cy apply to --source images only");
+    if (opts.source == Source::kSynthetic) {
+      throw std::invalid_argument("--fx..--cy apply to --source images or camera only");
     }
     opts.intrinsics = td::CameraIntrinsics{*fx, *fy, *cx, *cy};
   }
@@ -235,7 +235,7 @@ void usage(const char* argv0) {
          "  --refine-edges true|false  Refine edges at full resolution (default: true)\n"
          "  --sharpening X             Bit sharpening, 0..1 (default: 0.25)\n"
          "  --threads N                CPU backend worker threads (default: 1)\n"
-         "Pose (--source images; synthetic scenes provide their own):\n"
+         "Pose (--source images or camera; synthetic scenes provide their own):\n"
          "  --fx F --fy F --cx C --cy C  Camera intrinsics in pixels\n"
          "  --tag-size M               Black-border width in meters (default: 0.12)\n"
          "Output:\n"

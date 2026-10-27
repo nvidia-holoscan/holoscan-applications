@@ -110,6 +110,16 @@ with `--run-args='--width 1280 --height 720'`); otherwise the run stops with the
 sizes it does offer. `--device` selects another camera. It runs until Ctrl+C or
 the window is closed. Nothing is recorded.
 
+With the camera's intrinsics and the tag's size, each label also shows the
+tag's distance from the camera. The size is the side of the square the detector
+finds: the black border for `tag36h11`, and five of the nine cells across for
+`tagStandard41h12` (40 mm on a tag printed 72 mm wide):
+
+```bash
+holoscan run apriltag_detection camera --run-args='--family tagStandard41h12 \
+  --fx 600 --fy 600 --cx 319.5 --cy 239.5 --tag-size 0.040'
+```
+
 ### Your own images
 
 Convert frames to binary PGM or PPM, for example
