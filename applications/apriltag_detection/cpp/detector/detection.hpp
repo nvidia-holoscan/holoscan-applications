@@ -81,4 +81,33 @@ struct Detection {
   std::optional<TagPose> pose;
 };
 
+// Most tags one frame reports, for every backend; the rest are counted in
+// Overflow::detections.
+inline constexpr std::size_t kMaxDetectionsPerFrame = 64;
+
+// What a frame lost to a backend's fixed capacities; all zero unless the frame
+// was too busy for them. The CUDA backend keeps whichever points, candidates and
+// quads its threads wrote first, so a frame over capacity can miss tags, and
+// which ones varies from run to run.
+struct Overflow {
+  std::uint32_t points{};      // CUDA: boundary points past the segmenter's capacity.
+  std::uint32_t candidates{};  // CUDA: quad candidates past the fitting capacity.
+  std::uint32_t quads{};       // CUDA: fitted quads past the decoding capacity.
+  // Tags found past kMaxDetectionsPerFrame. VPI keeps at most one more than it
+  // returns, so for VPI this is a lower bound.
+  std::uint32_t detections{};
+
+  // Whether an earlier stage dropped work, so tags may be missing.
+  [[nodiscard]] bool truncated() const noexcept {
+    return points != 0 || candidates != 0 || quads != 0;
+  }
+};
+
+// One frame's results: at most kMaxDetectionsPerFrame tags, best first where the
+// backend ranks them, and what did not fit.
+struct FrameDetections {
+  std::vector<Detection> tags;
+  Overflow overflow;
+};
+
 }  // namespace tag_detection

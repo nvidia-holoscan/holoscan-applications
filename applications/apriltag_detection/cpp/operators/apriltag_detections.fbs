@@ -42,8 +42,12 @@ table AprilTagDetections {
   // Time spent detecting, from receiving the image to having results on the host.
   detect_time_us: float (id: 5);
   detections: [TagDetection] (id: 6);
-  // Tags found beyond the message's capacity and not reported.
+  // Tags found beyond the message's capacity of 64 and not reported. A lower
+  // bound for VPI, which keeps at most one more.
   dropped: int (id: 7);
+  // The detector ran out of capacity before decoding (boundary points, quad
+  // candidates or quads), so tags in this frame may be missing.
+  truncated: bool (id: 8);
 }
 
 root_type AprilTagDetections;

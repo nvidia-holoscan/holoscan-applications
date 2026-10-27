@@ -238,6 +238,9 @@ void print_report(const td::BackendReport& report, std::uint32_t expected_frames
   if (report.dropped != 0) {
     std::cout << " dropped=" << report.dropped;
   }
+  if (report.truncated_frames != 0) {
+    std::cout << " truncated_frames=" << report.truncated_frames;
+  }
   std::cout << '\n';
 }
 

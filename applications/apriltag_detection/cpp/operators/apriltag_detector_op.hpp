@@ -8,7 +8,7 @@
 
 #include <cuda_runtime_api.h>
 
-#include <cstddef>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -27,9 +27,6 @@
 #include "detector/gray_converter.hpp"
 
 namespace tag_detection {
-
-// Most tags one message carries; further tags are counted in `dropped`.
-inline constexpr std::size_t kMaxDetectionsPerFrame = 64;
 
 struct AprilTagDetectorConfig {
   Backend backend{Backend::kCuda};
@@ -62,6 +59,9 @@ class AprilTagDetectorOp final : public holoscan::Operator<> {
   holoscan::Output<schema::AprilTagDetectionsT> detections;
 
  private:
+  // Warns about frames over a backend's capacity, at most every few seconds.
+  void warn_overflow(const Overflow& overflow);
+
   AprilTagDetectorConfig config_;
   // Built on the first image, and again if the image size changes.
   std::unique_ptr<DetectorBackend> backend_;
@@ -77,6 +77,9 @@ class AprilTagDetectorOp final : public holoscan::Operator<> {
   // For frames whose activation has no runtime CUDA stream; made on first use.
   std::unique_ptr<CUstream_st, StreamDestroy> own_stream_;
   std::uint64_t frames_{};
+  // Frames over a backend capacity since the last warning, and when that was.
+  std::uint64_t overflowed_frames_{};
+  std::optional<std::chrono::steady_clock::time_point> last_overflow_warning_;
 };
 
 }  // namespace tag_detection

@@ -89,12 +89,18 @@ std::unique_ptr<DetectorBackend> create_vpi_backend(const DetectorOptions&, int,
 }
 #endif
 
-std::vector<Detection> DetectorBackend::detect(const GrayImageView& image, cudaStream_t stream) {
+FrameDetections DetectorBackend::detect(const GrayImageView& image, cudaStream_t stream) {
   if (image.location != input_location() || image.width != width_ || image.height != height_) {
     throw std::invalid_argument(std::string(name()) +
                                 " backend: the image is not of the configured size and location");
   }
-  return find(image, stream);
+  FrameDetections result = find(image, stream);
+  if (result.tags.size() > kMaxDetectionsPerFrame) {
+    result.overflow.detections +=
+        static_cast<std::uint32_t>(result.tags.size() - kMaxDetectionsPerFrame);
+    result.tags.resize(kMaxDetectionsPerFrame);
+  }
+  return result;
 }
 
 std::unique_ptr<DetectorBackend> create_backend(Backend backend, const DetectorOptions& options,

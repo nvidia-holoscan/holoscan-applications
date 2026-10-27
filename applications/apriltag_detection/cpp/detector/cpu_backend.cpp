@@ -49,7 +49,7 @@ class CpuBackend final : public DetectorBackend {
     return MemoryLocation::kHost;
   }
 
-  [[nodiscard]] std::vector<Detection> find(const GrayImageView& image, cudaStream_t) override {
+  [[nodiscard]] FrameDetections find(const GrayImageView& image, cudaStream_t) override {
     image_u8_t view{.width = image.width,
                     .height = image.height,
                     .stride = static_cast<int32_t>(image.pitch),
@@ -59,15 +59,15 @@ class CpuBackend final : public DetectorBackend {
     if (!found) {
       throw std::runtime_error("apriltag_detector_detect failed");
     }
-    std::vector<Detection> detections;
-    detections.reserve(static_cast<std::size_t>(zarray_size(found.get())));
+    FrameDetections result;
+    result.tags.reserve(static_cast<std::size_t>(zarray_size(found.get())));
     for (int i = 0; i < zarray_size(found.get()); ++i) {
       apriltag_detection_t* det = nullptr;
       zarray_get(found.get(), i, &det);
-      detections.push_back(
+      result.tags.push_back(
           make_detection(det->id, det->hamming, det->decision_margin, det->c, det->p));
     }
-    return detections;
+    return result;
   }
 
  private:

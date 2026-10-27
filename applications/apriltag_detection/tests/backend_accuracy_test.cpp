@@ -4,7 +4,8 @@
 // Every compiled backend against the synthetic scene's ground truth: each tag
 // found with its id, corners in order and in place, poses close, and nothing
 // else reported. Also checks the CUDA backend against the CPU reference on tags
-// cut by the image edge, and on images with more edges than its buffers hold.
+// cut by the image edge, and that every backend reports the work it drops when a
+// frame is over one of its capacities.
 
 #include <cuda_runtime_api.h>
 
@@ -13,7 +14,6 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -42,6 +42,7 @@ struct Errors {
   double max_translation_rel{};
   double max_rotation_deg{};
   double detect_ms{};
+  int overflowed{};  // Frames that reported any overflow.
 };
 
 double rotation_error_deg(const std::array<double, 9>& a, const std::array<double, 9>& b) {
@@ -55,9 +56,9 @@ double rotation_error_deg(const std::array<double, 9>& a, const std::array<doubl
   return std::acos(std::clamp((trace - 1.0) / 2.0, -1.0, 1.0)) * 180.0 / M_PI;
 }
 
-std::vector<Detection> run_backend(DetectorBackend& backend, const std::vector<std::uint8_t>& gray,
-                                   GrayConverter& converter, cudaStream_t stream,
-                                   std::uint8_t* device_copy, bool device_input) {
+FrameDetections run_backend(DetectorBackend& backend, const std::vector<std::uint8_t>& gray,
+                            GrayConverter& converter, cudaStream_t stream, std::uint8_t* device_copy,
+                            bool device_input) {
   ImageView view{gray.data(), kWidth, kHeight, kWidth, PixelFormat::kMono8, MemoryLocation::kHost};
   if (device_input) {
     cudaMemcpy(device_copy, gray.data(), gray.size(), cudaMemcpyHostToDevice);
@@ -67,9 +68,10 @@ std::vector<Detection> run_backend(DetectorBackend& backend, const std::vector<s
   return backend.detect(converter.convert(view, backend.input_location(), stream), stream);
 }
 
-Errors evaluate(Backend kind, const std::string& family, bool device_input) {
+Errors evaluate(Backend kind, const std::string& family, bool device_input, int max_hamming) {
   DetectorOptions options;
   options.family = family;
+  options.max_hamming = max_hamming;
   auto backend = create_backend(kind, options, kWidth, kHeight);
   GrayConverter converter;
   cudaStream_t stream = nullptr;
@@ -82,7 +84,11 @@ Errors evaluate(Backend kind, const std::string& family, bool device_input) {
     const SyntheticScene scene = make_scene(family, frame, kWidth, kHeight);
     const auto gray = render_scene(scene, 1);
     const auto start = std::chrono::steady_clock::now();
-    auto detections = run_backend(*backend, gray, converter, stream, device_copy, device_input);
+    FrameDetections result =
+        run_backend(*backend, gray, converter, stream, device_copy, device_input);
+    std::vector<Detection>& detections = result.tags;
+    const Overflow& overflow = result.overflow;
+    if (overflow.truncated() || overflow.detections != 0) ++errors.overflowed;
     errors.detect_ms +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     ++errors.frames;
@@ -115,20 +121,21 @@ Errors evaluate(Backend kind, const std::string& family, bool device_input) {
   cudaFree(device_copy);
   cudaStreamDestroy(stream);
   std::printf(
-      "  %-8s %-17s %-6s found %d/%d extra %d | corner mean %.3f max %.3f px | "
+      "  %-8s %-17s hamming %d %-6s found %d/%d extra %d | corner mean %.3f max %.3f px | "
       "translation max %.2f%% | rotation max %.2f deg | %.2f ms/frame\n",
-      std::string(backend_name(kind)).c_str(), family.c_str(), device_input ? "device" : "host",
-      errors.found, errors.expected, errors.extra,
+      std::string(backend_name(kind)).c_str(), family.c_str(), max_hamming,
+      device_input ? "device" : "host", errors.found, errors.expected, errors.extra,
       errors.corners ? errors.sum_corner_px / errors.corners : 0.0, errors.max_corner_px,
       100.0 * errors.max_translation_rel, errors.max_rotation_deg,
       errors.detect_ms / errors.frames);
   return errors;
 }
 
-void check_backend(Backend kind, const std::string& family, bool device_input) {
-  const Errors errors = evaluate(kind, family, device_input);
+void check_backend(Backend kind, const std::string& family, bool device_input, int max_hamming) {
+  const Errors errors = evaluate(kind, family, device_input, max_hamming);
   VERIFY_MSG(errors.found == errors.expected, "every tag is found");
   VERIFY_MSG(errors.extra == 0, "nothing else is reported");
+  VERIFY_MSG(errors.overflowed == 0, "no frame is over a capacity");
   VERIFY_MSG(errors.wrong_order == 0, "corners are in the AprilTag order");
   VERIFY_MSG(errors.max_corner_px < 1.0, "corners are within a pixel");
   VERIFY_MSG(errors.max_translation_rel < 0.02, "translation is within 2% of the distance");
@@ -179,9 +186,9 @@ void check_edge_tags(Backend kind) {
     const ImageView view{gray.data(),          kWidth, kHeight, kWidth, PixelFormat::kMono8,
                          MemoryLocation::kHost};
     const auto expected = reference->detect(
-        reference_converter.convert(view, MemoryLocation::kHost, nullptr), nullptr);
+        reference_converter.convert(view, MemoryLocation::kHost, nullptr), nullptr).tags;
     const auto found =
-        backend->detect(converter.convert(view, backend->input_location(), nullptr), nullptr);
+        backend->detect(converter.convert(view, backend->input_location(), nullptr), nullptr).tags;
     reference_tags += static_cast<int>(expected.size());
     found_tags += static_cast<int>(found.size());
     const std::string where = "frame " + std::to_string(frame) + ": tag ";
@@ -221,36 +228,108 @@ void check_edge_tags(Backend kind) {
              "the edge scene clips some tags");
 }
 
-// Vertical black and white stripes one or two decimated pixels wide: every
-// pixel borders another component, more boundary points than the CUDA
-// backend's fixed buffers hold, so the excess is dropped. Nothing is a tag; a
-// scene detected afterwards still is.
+// Vertical black and white stripes one decimated pixel wide: every pixel
+// borders the next stripe on its right and both lower diagonals, three boundary
+// points per pixel, more than the CUDA backend's buffers hold (two), so the
+// excess is dropped and reported. Nothing is a tag; a scene detected afterwards
+// still is, with nothing dropped.
 void check_dense_edges() {
   DetectorOptions options;
   auto backend = create_backend(Backend::kCuda, options, kWidth, kHeight);
   GrayConverter converter;
-  std::mt19937 random(7);
   std::vector<std::uint8_t> stripes(static_cast<std::size_t>(kWidth) * kHeight);
-  std::uint8_t value = 0;
-  for (int x = 0; x < kWidth;) {
-    const int width = options.decimate * (1 + static_cast<int>(random() & 1U));
-    for (int end = std::min(kWidth, x + width); x < end; ++x) {
-      for (int y = 0; y < kHeight; ++y) {
-        stripes[static_cast<std::size_t>(y) * kWidth + x] = value;
-      }
+  for (int y = 0; y < kHeight; ++y) {
+    for (int x = 0; x < kWidth; ++x) {
+      stripes[static_cast<std::size_t>(y) * kWidth + x] = (x / options.decimate) % 2 ? 255 : 0;
     }
-    value = 255 - value;
   }
   for (int pass = 0; pass < 2; ++pass) {
-    const auto found =
+    const FrameDetections found =
         run_backend(*backend, stripes, converter, nullptr, nullptr, /*device_input=*/false);
-    VERIFY_MSG(found.empty(), std::to_string(found.size()) + " tags found in stripes");
+    std::printf("  cuda     stripes: %zu tags, dropped %u points\n", found.tags.size(),
+                found.overflow.points);
+    VERIFY_MSG(found.tags.empty(), std::to_string(found.tags.size()) + " tags found in stripes");
+    VERIFY_MSG(found.overflow.points > 0 && found.overflow.truncated(),
+               "the dropped boundary points are reported");
   }
   const SyntheticScene scene = make_scene("tag36h11", 0, kWidth, kHeight);
-  const auto found =
+  const FrameDetections found =
       run_backend(*backend, render_scene(scene, 1), converter, nullptr, nullptr, false);
-  VERIFY_MSG(found.size() == scene.tags.size(),
-             std::to_string(found.size()) + " tags found after the stripes");
+  VERIFY_MSG(found.tags.size() == scene.tags.size(),
+             std::to_string(found.tags.size()) + " tags found after the stripes");
+  VERIFY_MSG(!found.overflow.truncated(), "nothing is dropped after the stripes");
+}
+
+// A checkerboard of `square`-pixel squares: every black square is a quad the
+// CUDA backend fits, more than it can fit (small squares) or decode (larger
+// ones). Nothing is a tag, and the dropped work is reported.
+Overflow checkerboard_overflow(int square) {
+  DetectorOptions options;
+  auto backend = create_backend(Backend::kCuda, options, kWidth, kHeight);
+  GrayConverter converter;
+  std::vector<std::uint8_t> board(static_cast<std::size_t>(kWidth) * kHeight);
+  for (int y = 0; y < kHeight; ++y) {
+    for (int x = 0; x < kWidth; ++x) {
+      board[static_cast<std::size_t>(y) * kWidth + x] = ((x / square + y / square) % 2) ? 230 : 20;
+    }
+  }
+  const FrameDetections found = run_backend(*backend, board, converter, nullptr, nullptr, false);
+  std::printf("  cuda     %d px checkerboard: %zu tags, dropped %u points, %u candidates, %u quads\n",
+              square, found.tags.size(), found.overflow.points, found.overflow.candidates,
+              found.overflow.quads);
+  VERIFY_MSG(found.tags.empty(), std::to_string(found.tags.size()) + " tags found in a checkerboard");
+  VERIFY_MSG(found.overflow.truncated(), "the checkerboard's dropped work is reported");
+  return found.overflow;
+}
+
+void check_quad_overflow() {
+  VERIFY_MSG(checkerboard_overflow(16).quads > 0, "quads past the decoding capacity are counted");
+}
+
+void check_candidate_overflow() {
+  VERIFY_MSG(checkerboard_overflow(10).candidates > 0,
+             "quad candidates past the fitting capacity are counted");
+}
+
+// More tags than a frame reports: a grid of fronto-parallel tags. Each backend
+// reports the first kMaxDetectionsPerFrame, all of them real, and counts the rest.
+void check_detection_overflow(Backend kind) {
+  constexpr int kColumns = 12;
+  constexpr int kRows = 7;
+  SyntheticScene scene = make_scene("tag36h11", 0, kWidth, kHeight);
+  scene.tags.clear();
+  const double depth = 2.0;
+  const double pitch_x = kWidth / scene.intrinsics.fx * depth / kColumns;
+  const double pitch_y = kHeight / scene.intrinsics.fy * depth / kRows;
+  for (int row = 0; row < kRows; ++row) {
+    for (int column = 0; column < kColumns; ++column) {
+      SceneTag tag;
+      tag.id = row * kColumns + column;
+      tag.pose.rotation = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+      tag.pose.translation = {(column - (kColumns - 1) / 2.0) * pitch_x,
+                              (row - (kRows - 1) / 2.0) * pitch_y, depth};
+      scene.tags.push_back(tag);
+    }
+  }
+  scene.tag_size = 0.6 * std::min(pitch_x, pitch_y);
+  DetectorOptions options;
+  auto backend = create_backend(kind, options, kWidth, kHeight);
+  GrayConverter converter;
+  const FrameDetections found =
+      run_backend(*backend, render_scene(scene, 1), converter, nullptr, nullptr, false);
+  std::printf("  %-8s %d-tag grid: reported %zu, dropped %u\n",
+              std::string(backend_name(kind)).c_str(), kColumns * kRows, found.tags.size(),
+              found.overflow.detections);
+  const auto excess = static_cast<std::uint32_t>(kColumns * kRows - kMaxDetectionsPerFrame);
+  VERIFY_MSG(found.tags.size() == kMaxDetectionsPerFrame,
+             std::to_string(found.tags.size()) + " tags reported");
+  // VPI discards what does not fit its array without counting it.
+  VERIFY_MSG(kind == Backend::kVpi ? found.overflow.detections >= 1
+                                   : found.overflow.detections == excess,
+             std::to_string(found.overflow.detections) + " tags counted as dropped");
+  VERIFY_MSG(!found.overflow.truncated(), "nothing before decoding is dropped");
+  const TruthCounts counts = match_truth(scene, found.tags, [](const TruthMatch&) {});
+  VERIFY_MSG(counts.extra == 0, std::to_string(counts.extra) + " reported tags are not real");
 }
 
 }  // namespace
@@ -261,13 +340,15 @@ int main() {
   using tag_detection::testing::TestCase;
   std::vector<TestCase> cases;
   for (Backend backend : tag_detection::available_backends()) {
+    const std::string name(tag_detection::backend_name(backend));
     for (const char* family : {"tag36h11", "tagStandard41h12", "tag25h9"}) {
       for (bool device_input : {false, true}) {
-        cases.push_back({std::string(tag_detection::backend_name(backend)) + " " + family +
-                             (device_input ? " device input" : " host input"),
-                         [=] { tag_detection::check_backend(backend, family, device_input); }});
+        cases.push_back({name + " " + family + (device_input ? " device input" : " host input"),
+                         [=] { tag_detection::check_backend(backend, family, device_input, 1); }});
       }
     }
+    cases.push_back({name + " more tags than a frame reports",
+                     [=] { tag_detection::check_detection_overflow(backend); }});
   }
   for (Backend backend : tag_detection::available_backends()) {
     if (backend == Backend::kCpu) continue;
@@ -275,5 +356,8 @@ int main() {
                      [=] { tag_detection::check_edge_tags(backend); }});
   }
   cases.push_back({"cuda more edges than its buffers hold", tag_detection::check_dense_edges});
+  cases.push_back({"cuda more quads than it decodes", tag_detection::check_quad_overflow});
+  cases.push_back(
+      {"cuda more quad candidates than it fits", tag_detection::check_candidate_overflow});
   return tag_detection::testing::run(cases);
 }

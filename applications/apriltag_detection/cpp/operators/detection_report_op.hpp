@@ -32,6 +32,7 @@ struct BackendReport {
   std::uint32_t frames{};
   std::uint64_t tags{};
   std::uint64_t dropped{};
+  std::uint32_t truncated_frames{};  // Frames that ran out of detector capacity.
   std::vector<float> detect_ms;
   // Ground-truth checks; empty when the input is not synthetic.
   bool verified{};

@@ -16,12 +16,16 @@
 
 #include <holoscan/core/domain/tensor.hpp>
 #include <holoscan/core/payload_options.hpp>
+#include <holoscan/logger/logger.hpp>
 #include <holoscan/sensor_io/provenance.hpp>
 
 #include "detector/pose.hpp"
 
 namespace tag_detection {
 namespace {
+
+// Least time between two warnings about frames over a backend's capacity.
+constexpr std::chrono::seconds kOverflowWarningInterval{5};
 
 holoscan::Error invalid(std::string message) {
   return holoscan::Error{holoscan::ErrorCode::kInvalidArgument,
@@ -160,7 +164,11 @@ holoscan::Contract AprilTagDetectorOp::contract() const {
   return result;
 }
 
-void AprilTagDetectorOp::start() { frames_ = 0; }
+void AprilTagDetectorOp::start() {
+  frames_ = 0;
+  overflowed_frames_ = 0;
+  last_overflow_warning_.reset();
+}
 
 void AprilTagDetectorOp::stop() {
   backend_.reset();
@@ -206,7 +214,7 @@ holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
     return holoscan::make_unexpected(std::move(ready).error());
   }
 
-  std::vector<Detection> found;
+  FrameDetections found;
   std::chrono::steady_clock::time_point start;
   try {
     if (!backend_ || view->width != image_width_ || view->height != image_height_) {
@@ -219,7 +227,7 @@ holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
     const GrayImageView gray = converter_.convert(*view, backend_->input_location(), stream);
     found = backend_->detect(gray, stream);
     if (config_.intrinsics) {
-      for (Detection& detection : found) {
+      for (Detection& detection : found.tags) {
         detection.pose = estimate_pose(detection, *config_.intrinsics, config_.tag_size);
       }
     }
@@ -238,15 +246,35 @@ holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
   message.image_height = view->height;
   message.backend = std::string(backend_->name());
   message.family = config_.options.family;
-  const std::size_t kept = std::min(found.size(), kMaxDetectionsPerFrame);
-  message.detections.reserve(kept);
-  for (std::size_t i = 0; i < kept; ++i) {
-    message.detections.push_back(to_message(found[i]));
+  message.detections.reserve(found.tags.size());
+  for (const Detection& detection : found.tags) {
+    message.detections.push_back(to_message(detection));
   }
-  message.dropped = static_cast<std::int32_t>(found.size() - kept);
+  const Overflow& overflow = found.overflow;
+  message.dropped = static_cast<std::int32_t>(overflow.detections);
+  message.truncated = overflow.truncated();
+  if (overflow.truncated() || overflow.detections != 0) {
+    warn_overflow(overflow);
+  }
   message.detect_time_us =
       std::chrono::duration<float, std::micro>(std::chrono::steady_clock::now() - start).count();
   return detections.emit(std::move(message), holoscan::sensor_io::derive_from(*sample));
+}
+
+void AprilTagDetectorOp::warn_overflow(const Overflow& overflow) {
+  ++overflowed_frames_;
+  const auto now = std::chrono::steady_clock::now();
+  if (last_overflow_warning_ && now - *last_overflow_warning_ < kOverflowWarningInterval) {
+    return;
+  }
+  HOLOSCAN_LOG_WARN(
+      "AprilTagDetectorOp ({} backend): {} frame(s) over capacity since the last warning; the "
+      "latest dropped {} boundary points, {} quad candidates, {} quads and {} detections{}",
+      backend_->name(),
+      overflowed_frames_, overflow.points, overflow.candidates, overflow.quads,
+      overflow.detections, overflow.truncated() ? ", so tags may be missing" : "");
+  overflowed_frames_ = 0;
+  last_overflow_warning_ = now;
 }
 
 }  // namespace tag_detection

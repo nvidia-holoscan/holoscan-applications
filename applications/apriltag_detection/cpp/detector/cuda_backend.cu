@@ -13,7 +13,6 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -35,8 +34,8 @@ namespace {
 constexpr int kMaxCornerCandidates = 10;
 // Most quads one frame can produce; more are counted and dropped.
 constexpr std::uint32_t kMaxQuads = 1024;
-// Most detections reported per frame.
-constexpr std::uint32_t kMaxResults = 128;
+// Most detections reported per frame; more are counted and dropped.
+constexpr auto kMaxResults = static_cast<std::uint32_t>(kMaxDetectionsPerFrame);
 // Adjacent edges whose directions' |cos| exceeds this are rejected (10 deg).
 constexpr double kMaxEdgeCos = 0.984807753;
 // Largest mean squared line-fit error per edge, in decimated pixels (AprilTag 3's
@@ -45,7 +44,7 @@ constexpr double kMaxLineFitMse = 10.0;
 // Bits of the largest family, tagStandard52h13, and cells across its grid.
 constexpr int kMaxBits = 64;
 constexpr int kMaxGrid = 12;
-// Most quad candidates fitted per frame; more are dropped.
+// Most quad candidates fitted per frame; more are counted and dropped.
 constexpr std::uint32_t kMaxJobs = 4096;
 // Most samples taken along one edge when refining it: enough for 8192 pixels.
 constexpr int kMaxEdgeSamples = 1024;
@@ -74,12 +73,13 @@ struct DecodedTag {
   double corners[4][2];
 };
 
-// The one block copied to the host per frame.
+// The one block copied to the host per frame. Each count includes what did not
+// fit, so the host can tell what the frame lost.
 struct FrameResult {
-  std::uint32_t count;   // Detections after duplicates are removed.
-  std::uint32_t quads;   // Quads fitted, including any past kMaxQuads.
-  std::uint32_t points;  // Boundary points found, including any past the capacity.
-  std::uint32_t reserved;
+  std::uint32_t count;       // Detections after duplicates are removed.
+  std::uint32_t quads;       // Quads fitted.
+  std::uint32_t candidates;  // Quad candidates (fit jobs).
+  std::uint32_t points;      // Boundary points found.
   DecodedTag tags[kMaxResults];
 };
 
@@ -746,7 +746,8 @@ __device__ bool ranks_before(const DecodedTag& a, const DecodedTag& b) {
 // One thread. Several quads can frame one tag (outer and inner border edges,
 // both polarities); keeps the best decode of each, in rank order.
 __global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* quad_count,
-                              const SegmentCounts* counts, FrameResult* result) {
+                              const std::uint32_t* job_count, const SegmentCounts* counts,
+                              FrameResult* result) {
   const std::uint32_t quads = min(*quad_count, kMaxQuads);
   std::uint16_t order[kMaxQuads];
   std::uint32_t found = 0;
@@ -780,6 +781,7 @@ __global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* qu
   }
   result->count = count;
   result->quads = *quad_count;
+  result->candidates = *job_count;
   result->points = counts->points;
 }
 
@@ -844,8 +846,7 @@ class CudaBackend final : public DetectorBackend {
     return MemoryLocation::kDevice;
   }
 
-  [[nodiscard]] std::vector<Detection> find(const GrayImageView& image,
-                                            cudaStream_t stream) override {
+  [[nodiscard]] FrameDetections find(const GrayImageView& image, cudaStream_t stream) override {
     segmenter_.segment(image, stream);
     cuda_check(cudaMemsetAsync(quad_count_.get(), 0, 2 * sizeof(std::uint32_t), stream),
                "cudaMemsetAsync");
@@ -857,8 +858,8 @@ class CudaBackend final : public DetectorBackend {
     const DeviceGray gray{image.data, width_, height_, image.pitch};
     decode_kernel<<<kMaxQuads, kBlock, 0, stream>>>(quads_.get(), quad_count_.get(), gray, family_,
                                                     decoded_.get());
-    select_kernel<<<1, 1, 0, stream>>>(decoded_.get(), quad_count_.get(), clusters.counts,
-                                       result_.get());
+    select_kernel<<<1, 1, 0, stream>>>(decoded_.get(), quad_count_.get(), quad_count_.get() + 1,
+                                       clusters.counts, result_.get());
     cuda_check(cudaGetLastError(), "CUDA backend kernels");
     // The one copy to the host, and the one wait.
     cuda_check(cudaMemcpyAsync(host_result_.get(), result_.get(), sizeof(FrameResult),
@@ -867,11 +868,17 @@ class CudaBackend final : public DetectorBackend {
     cuda_check(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
 
     const FrameResult& result = *host_result_;
-    warn_once(result);
-    std::vector<Detection> detections;
+    const auto excess = [](std::uint32_t found, std::uint32_t capacity) {
+      return found > capacity ? found - capacity : 0U;
+    };
+    FrameDetections detections;
+    detections.overflow = Overflow{.points = excess(result.points, segmenter_.capacity()),
+                                   .candidates = excess(result.candidates, kMaxJobs),
+                                   .quads = excess(result.quads, kMaxQuads),
+                                   .detections = excess(result.count, kMaxResults)};
     for (std::uint32_t i = 0; i < std::min(result.count, kMaxResults); ++i) {
       const DecodedTag& tag = result.tags[i];
-      detections.push_back(
+      detections.tags.push_back(
           make_detection(tag.id, tag.hamming, tag.margin, tag.center, tag.corners));
     }
     return detections;
@@ -924,17 +931,6 @@ class CudaBackend final : public DetectorBackend {
     family_.table_mask = mask;
   }
 
-  // Says once if a frame had more boundary points or quads than the buffers
-  // hold, so some of its tags may have been missed.
-  void warn_once(const FrameResult& result) {
-    if (!warned_ && (result.points > segmenter_.capacity() || result.quads > kMaxQuads)) {
-      warned_ = true;
-      std::cerr << "apriltag CUDA backend: a frame had " << result.points << " boundary points (of "
-                << segmenter_.capacity() << ") and " << result.quads << " quads (of " << kMaxQuads
-                << "); the excess was dropped\n";
-    }
-  }
-
   GpuSegmenter segmenter_;
   std::unique_ptr<DeviceBuffer<TableEntry>> table_;
   DeviceBuffer<FitJob> jobs_;
@@ -945,7 +941,6 @@ class CudaBackend final : public DetectorBackend {
   std::unique_ptr<FrameResult, HostFree> host_result_;
   FamilyParams family_{};
   FitParams fit_{};
-  bool warned_{};
 };
 
 }  // namespace

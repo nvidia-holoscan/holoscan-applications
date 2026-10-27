@@ -28,16 +28,17 @@ class DetectorBackend {
   [[nodiscard]] virtual MemoryLocation input_location() const noexcept = 0;
   // Finds tags in `image`, which must be the size the backend was built for and
   // in input_location(). Device work is ordered on `stream`; results are on the
-  // host when this returns. Poses are left empty.
+  // host when this returns. Poses are left empty. Reports at most
+  // kMaxDetectionsPerFrame tags, and counts what did not fit.
   // @throws std::invalid_argument for an image of another size or location.
   // @throws std::runtime_error on a backend failure.
-  [[nodiscard]] std::vector<Detection> detect(const GrayImageView& image, cudaStream_t stream);
+  [[nodiscard]] FrameDetections detect(const GrayImageView& image, cudaStream_t stream);
 
  protected:
   DetectorBackend(int width, int height) : width_(width), height_(height) {}
-  // detect() once the image is checked.
-  [[nodiscard]] virtual std::vector<Detection> find(const GrayImageView& image,
-                                                    cudaStream_t stream) = 0;
+  // detect() once the image is checked. May return more than
+  // kMaxDetectionsPerFrame tags; detect() keeps the first ones and counts the rest.
+  [[nodiscard]] virtual FrameDetections find(const GrayImageView& image, cudaStream_t stream) = 0;
 
   int width_;
   int height_;

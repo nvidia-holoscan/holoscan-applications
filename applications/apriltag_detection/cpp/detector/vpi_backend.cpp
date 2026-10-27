@@ -35,8 +35,10 @@ namespace {
 constexpr bool pva_side_usable(int side) noexcept {
   return side >= 256 && side <= 4096 && side % 128 != 1;
 }
-// Results the detector can return per frame.
-constexpr std::int32_t kMaxDetections = 256;
+// Results VPI returns per frame. It discards any past its array's capacity
+// without counting them, so one more than the frame reports shows that some
+// were dropped.
+constexpr std::int32_t kMaxDetections = static_cast<std::int32_t>(kMaxDetectionsPerFrame) + 1;
 
 void check(VPIStatus status, std::string_view what) {
   if (status != VPI_SUCCESS) {
@@ -117,8 +119,7 @@ class VpiBackend final : public DetectorBackend {
     return hardware_ == VPI_BACKEND_PVA ? MemoryLocation::kDevice : MemoryLocation::kHost;
   }
 
-  [[nodiscard]] std::vector<Detection> find(const GrayImageView& image,
-                                            cudaStream_t stream) override {
+  [[nodiscard]] FrameDetections find(const GrayImageView& image, cudaStream_t stream) override {
     upload(image, stream);
     check(
         vpiSubmitAprilTagDetector(stream_, hardware_, payload_, kMaxDetections, gray_, detections_),
@@ -133,9 +134,9 @@ class VpiBackend final : public DetectorBackend {
       VPIArray array;
       ~Unlock() { vpiArrayUnlock(array); }
     } unlock{detections_};
-    std::vector<Detection> result;
+    FrameDetections result;
     const auto count = static_cast<std::size_t>(*data.buffer.aos.sizePointer);
-    result.reserve(count);
+    result.tags.reserve(count);
     const auto* base = static_cast<const std::byte*>(data.buffer.aos.data);
     for (std::size_t i = 0; i < count; ++i) {
       const auto* element = reinterpret_cast<const VPIAprilTagDetection*>(
@@ -146,8 +147,8 @@ class VpiBackend final : public DetectorBackend {
         corners[c][0] = element->corners[c].x;
         corners[c][1] = element->corners[c].y;
       }
-      result.push_back(make_detection(element->id, element->correctedBits, element->decisionMargin,
-                                      center, corners));
+      result.tags.push_back(make_detection(element->id, element->correctedBits, element->decisionMargin,
+                                           center, corners));
     }
     return result;
   }

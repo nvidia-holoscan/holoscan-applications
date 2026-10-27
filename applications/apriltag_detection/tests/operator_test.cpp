@@ -122,7 +122,7 @@ void check_message(const schema::AprilTagDetectionsT& message, const SyntheticSc
                    bool poses) {
   VERIFY(message.image_width == scene.width && message.image_height == scene.height);
   VERIFY(message.family == "tag36h11");
-  VERIFY(message.dropped == 0);
+  VERIFY(message.dropped == 0 && !message.truncated);
   VERIFY_MSG(message.detections.size() == scene.tags.size(),
              "frame " + std::to_string(message.frame) + ": " +
                  std::to_string(message.detections.size()) + " tags");
@@ -201,6 +201,29 @@ void check_options(Backend backend) {
   for (const schema::TagDetection& tag : messages.front().detections) {
     VERIFY(tag.hamming() == 0);
   }
+}
+
+// A frame over a backend's capacity says so in its message: one-pixel stripes
+// hold more boundary points than the CUDA backend keeps.
+void check_detector_truncated() {
+  constexpr int kDecimate = 2;
+  std::vector<std::uint8_t> stripes(static_cast<std::size_t>(kWidth) * kHeight);
+  for (int y = 0; y < kHeight; ++y) {
+    for (int x = 0; x < kWidth; ++x) {
+      stripes[static_cast<std::size_t>(y) * kWidth + x] = (x / kDecimate) % 2 ? 255 : 0;
+    }
+  }
+  holoscan::schema::ImageT image;
+  image.width = kWidth;
+  image.height = kHeight;
+  image.encoding = holoscan::schema::ImageEncoding_MONO8;
+  image.data = host_tensor(std::move(stripes), {kHeight, kWidth}, {kWidth, 1});
+  AprilTagDetectorConfig config{.backend = Backend::kCuda};
+  config.options.decimate = kDecimate;
+  const auto messages = run_detector(config, {image});
+  if (messages.size() != 1) return;
+  VERIFY(messages.front().truncated);
+  VERIFY(messages.front().detections.empty() && messages.front().dropped == 0);
 }
 
 // Detections carry their image's capture time and frame identity.
@@ -491,6 +514,7 @@ int main() {
   cases.push_back({"detector rejects unsupported encodings",
                    tag_detection::check_rejects_unsupported_encoding});
   cases.push_back({"detector rejects bad configuration", tag_detection::check_rejects_bad_config});
+  cases.push_back({"detector reports a truncated frame", tag_detection::check_detector_truncated});
   cases.push_back({"detector forwards provenance", tag_detection::check_detector_provenance});
   cases.push_back({"detector keeps off the legacy default stream with host input",
                    tag_detection::check_detector_stream_with_host_input});

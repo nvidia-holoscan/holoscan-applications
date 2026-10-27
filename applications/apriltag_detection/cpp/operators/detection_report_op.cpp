@@ -42,6 +42,7 @@ holoscan::expected<void, holoscan::Error> DetectionReportOp::compute(
   ++report.frames;
   report.tags += message.detections.size();
   report.dropped += static_cast<std::uint64_t>(std::max(message.dropped, 0));
+  report.truncated_frames += message.truncated ? 1U : 0U;
   report.detect_ms.push_back(message.detect_time_us / 1000.0F);
   if (config_.truth) {
     verify(message);

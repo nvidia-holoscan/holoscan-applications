@@ -64,7 +64,8 @@ interrupt or a closed window ends it early. It exits 0 on `PASS`, 2 for invalid 
 
 The operator emits one `AprilTagDetections` message per image
 ([schema](cpp/operators/apriltag_detections.fbs)): frame number, image size, backend, family,
-detection time, and per tag its id, corrected bits, decision margin, center, corners (from the
+detection time, the tags dropped past its 64, whether the detector ran out of capacity before
+decoding (tags may then be missing; it also logs a warning), and per tag its id, corrected bits, decision margin, center, corners (from the
 tag's bottom-left, counter-clockwise as printed) and, with intrinsics, its pose. Poses place the tag
 in the camera frame (x right, y down, z forward); the tag's x is right and y down as printed, z into
 the tag. The display draws these axes as red, green and blue arrows (X and Y in the image plane
