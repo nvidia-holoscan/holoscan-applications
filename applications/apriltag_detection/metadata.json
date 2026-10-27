@@ -11,7 +11,7 @@
     "language": "C++",
     "version": "1.0.0",
     "changelog": {
-      "1.0.0": "Initial release: AprilTagDetectorOp with cpu, cuda and vpi backends; synthetic, image-folder and webcam sources; Holoviz overlay."
+      "1.0.0": "Initial release: AprilTagDetectorOp with cpu, cuda and vpi backends; a synthetic source checked against ground truth; Holoviz overlay."
     },
     "holoscan_sdk": {
       "minimum_required_version": "5.0.0",
@@ -42,11 +42,6 @@
           "name": "PVA",
           "description": "The Programmable Vision Accelerator of Jetson Orin or Thor, used by the vpi backend when present. Elsewhere VPI runs on the CPU.",
           "required": false
-        },
-        {
-          "name": "Webcam",
-          "description": "A V4L2 camera offering YUYV, for the camera mode, which also needs a display.",
-          "required": false
         }
       ]
     },
@@ -56,20 +51,6 @@
         "description": "Detect tags in a rendered scene with every compiled backend, check them against ground truth, and display the first backend's detections when a display is available.",
         "run": {
           "command": "\"<holohub_app_bin>/apriltag_detection\" --backend all --count 300",
-          "workdir": "holohub_app_bin"
-        }
-      },
-      "images": {
-        "description": "Detect tags in a folder of PGM/PPM images placed in the data directory. Add camera intrinsics with --run-args to also estimate poses.",
-        "run": {
-          "command": "\"<holohub_app_bin>/apriltag_detection\" --source images --images \"<holohub_data_dir>/apriltag_detection\" --backend cuda",
-          "workdir": "holohub_app_bin"
-        }
-      },
-      "camera": {
-        "description": "Live webcam with the HoloViz overlay; needs /dev/video0 and a display.",
-        "run": {
-          "command": "\"<holohub_app_bin>/apriltag_detection\" --source camera --backend cuda",
           "workdir": "holohub_app_bin"
         }
       },
