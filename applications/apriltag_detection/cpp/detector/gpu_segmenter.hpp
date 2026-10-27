@@ -152,6 +152,8 @@ class GpuSegmenter {
   int tiles_x_;
   int tiles_y_;
   std::uint32_t capacity_;
+  int component_bits_;  // Bits of a component root (a decimated pixel index).
+  int cluster_bits_;    // Bits of a cluster index.
   std::unique_ptr<Buffers> buffers_;
 };
 

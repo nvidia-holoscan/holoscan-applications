@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
@@ -27,7 +28,8 @@ constexpr std::uint8_t kUnknown = 127;
 constexpr std::uint32_t kMinComponentSize = 25;
 // Clusters with fewer raw points cannot be a tag border (AprilTag 3's limit).
 constexpr std::uint32_t kMinClusterPoints = 24;
-// Sorts after every real key, so the unused tail of a buffer sorts last.
+// Sorts after every real key in any range of low bits the sorts look at, so
+// the unused tail of a buffer sorts last.
 constexpr std::uint64_t kPadKey = ~std::uint64_t{0};
 // The point each cluster's points are ordered about: its bounding box's center,
 // nudged so that no point lies exactly on it. In doubled decimated pixels.
@@ -247,12 +249,13 @@ __device__ std::uint64_t pack_point(int x, int y, int gx, int gy, int weight) {
 }
 
 // Emits a point between each pixel and those of its right, lower and two lower
-// diagonal neighbors with the opposite color, keyed by the pair of components.
+// diagonal neighbors with the opposite color, keyed by the pair of components:
+// the lower root, then the higher, in `component_bits` bits each.
 __global__ void edge_points_kernel(const std::uint8_t* image, const std::uint8_t* gray, int width,
                                    int height, const std::int32_t* labels,
-                                   const std::uint32_t* sizes, std::uint64_t* keys,
-                                   std::uint64_t* points, std::uint32_t* counter,
-                                   std::uint32_t capacity) {
+                                   const std::uint32_t* sizes, int component_bits,
+                                   std::uint64_t* keys, std::uint64_t* points,
+                                   std::uint32_t* counter, std::uint32_t capacity) {
   const int index = blockIdx.x * blockDim.x + threadIdx.x;
   if (index >= width * height) {
     return;
@@ -291,7 +294,7 @@ __global__ void edge_points_kernel(const std::uint8_t* image, const std::uint8_t
     }
     const auto lo = static_cast<std::uint64_t>(min(root0, root1));
     const auto hi = static_cast<std::uint64_t>(max(root0, root1));
-    keys[slot] = (lo << 32) | hi;
+    keys[slot] = (lo << component_bits) | hi;
     const int sign = v1 > v0 ? 1 : -1;
     // Weight by the gray gradient at the pixel the point rounds to, so points
     // on strong edges dominate the line fits.
@@ -592,6 +595,11 @@ GpuSegmenter::GpuSegmenter(int width, int height, int decimate, int min_white_bl
   // Two boundary points per decimated pixel: a noisy scene needs about one.
   // Points past it are dropped.
   capacity_ = static_cast<std::uint32_t>(2 * pixels);
+  // The sorts look only at the key bits in use: two component roots (pixel
+  // indices), or a cluster index above a 32-bit angle. Each bit fewer saves
+  // radix passes; the order, and so every result, is the same.
+  component_bits_ = static_cast<int>(std::bit_width(pixels - 1));
+  cluster_bits_ = static_cast<int>(std::bit_width(capacity_));
   buffers_ =
       std::make_unique<Buffers>(pixels, static_cast<std::size_t>(tiles_x_) * tiles_y_, capacity_);
   // CUB's scratch, sized once for its largest call.
@@ -616,7 +624,8 @@ void GpuSegmenter::run_cub(int stage, void* temp, std::size_t& bytes, cudaStream
     case 0:  // Group the points by component pair.
       status =
           cub::DeviceRadixSort::SortPairs(temp, bytes, b.keys.get(), b.sorted_keys.get(),
-                                          b.points.get(), b.sorted_points.get(), n, 0, 64, stream);
+                                          b.points.get(), b.sorted_points.get(), n, 0,
+                                          2 * component_bits_, stream);
       break;
     case 1:
       status =
@@ -630,7 +639,8 @@ void GpuSegmenter::run_cub(int stage, void* temp, std::size_t& bytes, cudaStream
     case 3:  // Every cluster in angular order.
       status =
           cub::DeviceRadixSort::SortPairs(temp, bytes, b.keys.get(), b.sorted_keys.get(),
-                                          b.sorted_points.get(), b.points.get(), n, 0, 64, stream);
+                                          b.sorted_points.get(), b.points.get(), n, 0,
+                                          32 + cluster_bits_, stream);
       break;
     case 4:  // Drop repeated points.
       status = cub::DeviceSelect::Flagged(temp, bytes, index, b.keep.get(), b.unique_index.get(),
@@ -705,7 +715,7 @@ void GpuSegmenter::segment(const GrayImageView& image, cudaStream_t stream) {
   cuda_check(cudaMemsetAsync(b.counts.get(), 0, sizeof(SegmentCounts), stream), "cudaMemsetAsync");
   edge_points_kernel<<<blocks_for(pixels), kBlock, 0, stream>>>(
       b.threshold.get(), b.decimated.get(), dec_width_, dec_height_, b.labels.get(), b.sizes.get(),
-      b.keys.get(), b.points.get(), &b.counts.get()->points, capacity_);
+      component_bits_, b.keys.get(), b.points.get(), &b.counts.get()->points, capacity_);
   pad_kernel<<<point_blocks, kBlock, 0, stream>>>(b.counts.get(), capacity_, b.keys.get());
   cuda_check(cudaGetLastError(), "segmentation kernels");
   cub(0);
