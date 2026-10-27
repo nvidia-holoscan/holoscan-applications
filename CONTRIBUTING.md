@@ -45,13 +45,11 @@ any time.
 
 ## Development setup
 
-From the repository root, use Python 3.12–3.14 to install the pinned repository
-tools. This example uses Python 3.12:
+Install the pinned repository tools as described in
+[Getting started](README.md#getting-started); `requirements.txt` includes the
+Holoscan CLI and the lint tools. Then, from the repository root:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
 holoscan lint
 ```
 
