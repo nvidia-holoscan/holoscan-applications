@@ -341,12 +341,16 @@ int main() {
   std::vector<TestCase> cases;
   for (Backend backend : tag_detection::available_backends()) {
     const std::string name(tag_detection::backend_name(backend));
-    for (const char* family : {"tag36h11", "tagStandard41h12", "tag25h9"}) {
+    // tagCircle21h7 has bits outside its border, at negative coordinates.
+    for (const char* family : {"tag36h11", "tagStandard41h12", "tag25h9", "tagCircle21h7"}) {
       for (bool device_input : {false, true}) {
         cases.push_back({name + " " + family + (device_input ? " device input" : " host input"),
                          [=] { tag_detection::check_backend(backend, family, device_input, 1); }});
       }
     }
+    // Two corrected bits: the largest decode table.
+    cases.push_back({name + " tag25h9 max-hamming 2",
+                     [=] { tag_detection::check_backend(backend, "tag25h9", false, 2); }});
     cases.push_back({name + " more tags than a frame reports",
                      [=] { tag_detection::check_detection_overflow(backend); }});
   }
