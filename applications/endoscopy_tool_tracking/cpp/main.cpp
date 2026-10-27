@@ -37,6 +37,7 @@
 
 namespace {
 using std::chrono_literals::operator""ms;
+using std::chrono_literals::operator""ns;
 using std::chrono_literals::operator""s;
 namespace endo = endoscopy_tool_tracking;
 

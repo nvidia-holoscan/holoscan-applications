@@ -1,4 +1,4 @@
-# Repository tooling. The alpha CLI wheel is published on pypi.nvidia.com.
-holoscan-cli==5.0.0a2
+# Repository tooling. The CLI wheel is distributed through PyPI.
+holoscan-cli==5.0.0
 pre-commit==4.6.2
 jsonschema>=4.18,<5

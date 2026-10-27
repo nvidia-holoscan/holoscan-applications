@@ -33,7 +33,7 @@ Holoscan Applications is a collection and build framework for accelerated
 computing, streaming, and AI applications built with the NVIDIA Holoscan SDK.
 The repository-level code discovers applications, registers CMake projects, and
 uses the Holoscan CLI to build, run, test, and lint them. The current repository
-contains the framework but no registered application implementations.
+contains the framework and application implementations under `applications/`.
 
 This project operates at the application and build-tooling level. Its primary
 security responsibility is to preserve the integrity of application source,
@@ -60,14 +60,14 @@ The principal security boundaries are:
    during build, test, or runtime and could access host files, devices, GPU
    memory, credentials, or networks available to those processes.
 2. **Build dependency substitution:** `Dockerfile` accepts a caller-provided
-   `BASE_IMAGE`, and Python installation uses both the default package index and
-   `pypi.nvidia.com`. An untrusted image, compromised index, or package-name
+   `BASE_IMAGE`, and Python installation uses the default package index
+   (PyPI). An untrusted image, compromised index, or package-name
    collision could introduce code during container or CI builds.
 3. **CI and lint supply-chain compromise:** GitHub Actions and remote pre-commit
    hooks execute third-party code selected by version tags. A compromised
    upstream release or mutable tag could affect CI runners and developer
    workstations.
-4. **Unsafe application-specific inputs:** Future applications may consume
+4. **Unsafe application-specific inputs:** Applications may consume
    datasets, device streams, model files, or external-service responses. The
    repository framework does not centrally authenticate, validate, or constrain
    those inputs, so malformed or adversarial data must be handled by each

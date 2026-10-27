@@ -1,38 +1,57 @@
 # Holoscan Applications
 
-A collection of applications built with the NVIDIA Holoscan SDK. Browse the
-[applications](applications/) to find examples and starting points for your own
-accelerated computing, streaming, and AI workflows.
+Applications built with the [NVIDIA Holoscan SDK](https://github.com/nvidia-holoscan/holoscan-sdk).
+Run them to explore accelerated sensor-processing and AI workflows, or adapt
+them as starting points for your own projects.
 
-Each application owns its source, custom operators, tests, data preparation, and
-documentation. Applications can target different Holoscan SDK releases, including
-older versions. Check each application's README and `metadata.json` for supported
-SDK versions, hardware, dependencies, and data requirements.
+This repository is part of the Holoscan ecosystem and is listed in the
+[HoloHub registry](https://github.com/nvidia-holoscan/holohub). Applications are
+developed and run from this independent repository, with their source,
+application-specific operators, data preparation, and documentation kept
+together.
+
+## Choose an application
+
+Browse [applications](applications/) to find a workflow that matches your needs.
+Read the selected application's README and `metadata.json` for supported SDK
+versions, platforms, hardware, dependencies, and data preparation. Requirements
+vary by application.
 
 ## Getting started
 
-Install the [Holoscan CLI](https://pypi.org/project/holoscan-cli/) from PyPI:
+Clone the repository and install its required Holoscan CLI release from
+PyPI. Use Python 3.12–3.14; this example uses Python 3.12:
 
 ```bash
-pip install holoscan-cli
+git clone https://github.com/nvidia-holoscan/holoscan-applications.git
+cd holoscan-applications
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install "holoscan-cli==5.0.0"
+holoscan list
 ```
 
-From the repository root, discover available applications and their modes:
+The [Holoscan CLI](https://github.com/nvidia-holoscan/holoscan-cli) discovers
+applications in your checkout and provides build, run, and test commands.
+Choose a name from `holoscan list` and inspect its modes:
 
 ```bash
-holoscan list
 holoscan modes <application>
 ```
 
-Replace `<application>` with a name from `holoscan list`. `<mode>` is optional;
-omit it to use the application's default mode, or choose a mode listed by
-`holoscan modes <application>`. Follow the application's README to prepare its
-environment and data before building.
+Prepare the selected application's SDK environment and data before running it.
+For SDK setup, see the
+[installation guide](https://docs.nvidia.com/holoscan/sdk-user-guide/setup/sdk-installation)
+and the application's version-specific instructions.
 
 ## Build and run
 
-For a local build, use a Holoscan SDK installation compatible with the selected
-application:
+Run commands from the repository root. Replace `<application>` with a name
+from `holoscan list`. Choose `<mode>` from `holoscan modes <application>`,
+or omit it to use the default mode.
+
+For a local build, install the application's development dependencies and set
+`HOLOSCAN_SDK_ROOT` to a compatible SDK installation:
 
 ```bash
 export HOLOSCAN_SDK_ROOT=/path/to/holoscan/install
@@ -40,47 +59,32 @@ holoscan build <application> <mode> --local
 holoscan run <application> <mode> --local
 ```
 
-For a container build, set `HOLOSCAN_SDK_IMAGE` to a development image that
-provides the application's supported SDK version and dependencies:
+For container builds, install Docker and the NVIDIA Container Toolkit.
+Set `HOLOSCAN_CLI_BASE_IMAGE` to a development image matching the application's
+SDK version, architecture, and dependencies, then run:
 
 ```bash
-holoscan build <application> <mode> --base-img "$HOLOSCAN_SDK_IMAGE"
+holoscan build <application> <mode>
 holoscan run <application> <mode> --no-docker-build
 ```
 
-Applications may require additional setup for datasets, devices, displays, or
-external services. These instructions belong in the individual application's
-README. Run `holoscan <command> --help` for command options.
+Follow the application's README for any additional device, display, or data
+setup, standalone build instructions, and tests. Where tests are configured,
+run `holoscan test <application> --local` in the required environment.
+Use `holoscan <command> --help` for more options.
 
-## Testing
+## Learn more
 
-Use the application's documented test configuration with the Holoscan CLI:
+See [Holoscan Tutorials](https://github.com/nvidia-holoscan/holoscan-tutorials)
+for development walkthroughs and [Holoscan Benchmarks](https://github.com/nvidia-holoscan/holoscan-benchmarks)
+to measure performance.
 
-```bash
-holoscan test <application> --local
-```
+## Contributing
 
-Test requirements vary by application; some need a GPU, sample data, or attached
-hardware. See the [CI guide](docs/ci.md) for the shared application contract and
-hosted validation coverage.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for application layout, development setup,
+testing, and pull request requirements.
 
-## Contributing an application
+## License
 
-Put its `metadata.json`, `CMakeLists.txt`, source, tests, and README under
-`applications/<name>/`, then add `add_holoscan_application(<name>)` in alphabetical
-order to `applications/CMakeLists.txt`. Keep language-specific build logic in
-the corresponding application subdirectory, such as `cpp/` or `python/`.
-
-Document supported SDK versions, platforms, dependencies, data preparation,
-build and run modes, and tests in the application's README and metadata.
-Keep custom operators inside the application, and explicitly document any
-external operator dependencies.
-
-Use the installed CLI to check changes:
-
-```bash
-holoscan lint
-```
-
-Code contributions use the Apache-2.0 [license](LICENSE). Sign commits with
-`git commit -s` to certify the [Developer Certificate of Origin](https://developercertificate.org/).
+Code is licensed under [Apache 2.0](LICENSE). Separately downloaded models and
+datasets have their own terms, linked from each application's documentation.

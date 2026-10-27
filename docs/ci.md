@@ -20,19 +20,18 @@ datasets, or produce tested release artifacts. A separate SDK job performs
 build/run/test execution on `main` when compatible runners and an SDK image
 are configured. A skipped SDK job is not evidence of application correctness.
 
-## Comparison with Holohub main
+## Comparison with the former Holohub source collection
 
-Reviewed on 2026-10-07 against Holohub commit
-[`f9394a8`](https://github.com/nvidia-holoscan/holohub/tree/f9394a8de18c9ca4851ba6b270fe774d60965a2b).
-Its public workflows check CLI compatibility, Docker builds, lint, metadata,
-compliance, and links. Its
-[CLI CTest job](https://github.com/nvidia-holoscan/holohub/blob/f9394a8de18c9ca4851ba6b270fe774d60965a2b/.github/workflows/check_cli.yml)
-tests CLI integration; the
-[Docker job](https://github.com/nvidia-holoscan/holohub/blob/f9394a8de18c9ca4851ba6b270fe774d60965a2b/.github/workflows/check_docker.yml)
-builds tooling images. Neither establishes GPU application correctness. There
-are application CTest scripts in Holohub, but the public GitHub workflows do not
-invoke the all-application build/run script. This review does not establish the
-coverage of any private or externally managed CI.
+Reviewed on 2026-10-07 against the former Holohub source collection at
+commit `f9394a8de18c9ca4851ba6b270fe774d60965a2b`, now preserved on its
+`archive-4x` branch. Its public workflows checked CLI compatibility, Docker
+builds, lint, metadata, compliance, and links. Its CLI CTest job
+(`.github/workflows/check_cli.yml`) tested CLI integration; the Docker job
+(`.github/workflows/check_docker.yml`) built tooling images. Neither
+establishes GPU application correctness. There are application CTest scripts
+in that collection, but its public GitHub workflows do not invoke the
+all-application build/run script. This review does not establish the coverage
+of any private or externally managed CI.
 
 | Change here | What it does | Why |
 | --- | --- | --- |
@@ -226,9 +225,11 @@ integration is implied by the SDK job.
 - Repository hooks check SPDX identifiers, copyright notices, internal staging
   references, and Holoscan metadata using `check_copyright.py`, `check_internal_artifacts.py`, and
   `validate_metadata.py` in `.github/scripts/`. Each script accepts filenames
-  as arguments and can also be run directly from the repository root. Metadata
-  validation uses the CLI and `jsonschema` from `requirements.txt`; the hooks
-  require no SDK or GPU. Their regression tests run with the shared driver tests.
+  as arguments and can also be run directly from the repository root. The
+  metadata hook installs the CLI and `jsonschema` into its own pre-commit
+  environment, pinned to the versions in `requirements.txt`, so it also runs on
+  pre-commit.ci; the hooks require no SDK or GPU. Their regression tests run
+  with the shared driver tests.
 
 The SPDX hook requires an Apache-2.0 license identifier and a copyright notice
 with a holder and a valid year or year range. It accepts SPDX copyright notices
@@ -254,7 +255,7 @@ Install the repository tools:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --extra-index-url https://pypi.nvidia.com \
+python -m pip install \
   -r .github/requirements-ci.txt
 ```
 
