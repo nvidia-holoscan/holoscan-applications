@@ -12,15 +12,28 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 APP_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = APP_DIR / "prepare_data.py"
 sys.path.insert(0, str(APP_DIR))
 
-from prepare_data import CHECKSUMS, HEADSETS, REVISION, PreparationError, dataset_files, download
+import prepare_data as prepare_data_module
+from prepare_data import (
+    CHECKSUMS,
+    DATASET_ID,
+    DATASET_URL,
+    HEADSETS,
+    REVISION,
+    PreparationError,
+    dataset_files,
+    download_from_hub,
+    download_from_url,
+)
 
 
 class PrepareDataTest(unittest.TestCase):
@@ -118,6 +131,110 @@ class PrepareDataTest(unittest.TestCase):
         self.assertFalse((self.output / "data.snirf").exists())
         self.assertEqual(sorted(p.name for p in self.output.glob("tmp*")), [])
 
+    def test_hub_download_uses_the_pinned_dataset_and_publishes_verified_file(self) -> None:
+        remote = "flow_2/flow_channel_map.json"
+        payload = remote.encode()
+        expected = {"size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+        destination = self.output / "flow_channel_map.json"
+        destination.parent.mkdir(parents=True)
+        destination.write_bytes(b"previous verified file")
+        calls: list[dict[str, object]] = []
+
+        def fake_hf_hub_download(**kwargs: object) -> str:
+            calls.append(kwargs)
+            staged = Path(str(kwargs["local_dir"])) / remote
+            staged.parent.mkdir(parents=True)
+            staged.write_bytes(payload)
+            return str(staged)
+
+        fake_module = types.ModuleType("huggingface_hub")
+        fake_module.hf_hub_download = fake_hf_hub_download
+        with patch.dict(sys.modules, {"huggingface_hub": fake_module}):
+            download_from_hub(remote, destination, expected)
+
+        self.assertEqual(destination.read_bytes(), payload)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["repo_id"], DATASET_ID)
+        self.assertEqual(calls[0]["filename"], remote)
+        self.assertEqual(calls[0]["repo_type"], "dataset")
+        self.assertEqual(calls[0]["revision"], REVISION)
+        self.assertTrue(Path(str(calls[0]["local_dir"])).parent == self.output)
+        self.assertEqual(list(self.output.glob(".bci-download-*")), [])
+
+    def test_default_preparation_routes_every_asset_through_hub(self) -> None:
+        self._publish("flow_2")
+        calls: list[str] = []
+
+        def fake_download(
+            remote: str, destination: Path, expected: dict[str, object], *limits: float
+        ) -> None:
+            calls.append(remote)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes((self.dataset / REVISION / remote).read_bytes())
+
+        options = prepare_data_module.parse_arguments(
+            ["--output", str(self.output), "--checksums", str(self.checksums)]
+        )
+        self.assertEqual(options.base_url, DATASET_URL)
+        with patch.object(prepare_data_module, "download_from_hub", side_effect=fake_download):
+            prepare_data_module.prepare_data(options)
+
+        self.assertEqual(calls, [remote for remote, _ in dataset_files("flow_2")])
+
+    def test_bad_hub_download_preserves_existing_destination(self) -> None:
+        remote = "flow_2/flow_channel_map.json"
+        destination = self.output / "flow_channel_map.json"
+        destination.parent.mkdir(parents=True)
+        destination.write_bytes(b"previous verified file")
+        staged_payload = b"wrong contents"
+
+        def fake_hf_hub_download(**kwargs: object) -> str:
+            staged = Path(str(kwargs["local_dir"])) / remote
+            staged.parent.mkdir(parents=True)
+            staged.write_bytes(staged_payload)
+            return str(staged)
+
+        fake_module = types.ModuleType("huggingface_hub")
+        fake_module.hf_hub_download = fake_hf_hub_download
+        with (
+            patch.dict(sys.modules, {"huggingface_hub": fake_module}),
+            self.assertRaisesRegex(PreparationError, "checksum mismatch"),
+        ):
+            download_from_hub(remote, destination, {"size": 1, "sha256": "0" * 64})
+
+        self.assertEqual(destination.read_bytes(), b"previous verified file")
+        self.assertEqual(list(self.output.glob(".bci-download-*")), [])
+
+    def test_hub_download_applies_timeouts_and_preserves_destination(self) -> None:
+        destination = self.output / "flow_channel_map.json"
+        destination.parent.mkdir(parents=True)
+        destination.write_bytes(b"previous verified file")
+        calls: list[dict[str, object]] = []
+
+        def stalled_hf_hub_download(**kwargs: object) -> str:
+            calls.append(kwargs)
+            time.sleep(2)
+            return ""
+
+        fake_module = types.ModuleType("huggingface_hub")
+        fake_module.hf_hub_download = stalled_hf_hub_download
+        handler = signal.getsignal(signal.SIGALRM)
+        started = time.monotonic()
+        with (
+            patch.dict(sys.modules, {"huggingface_hub": fake_module}),
+            self.assertRaisesRegex(PreparationError, "deadline"),
+        ):
+            download_from_hub(
+                "flow_2/flow_channel_map.json", destination, {"size": 1, "sha256": "0" * 64}, 7, 0.1
+            )
+
+        self.assertLess(time.monotonic() - started, 1.5)
+        self.assertEqual(calls[0]["etag_timeout"], 7)
+        self.assertEqual(destination.read_bytes(), b"previous verified file")
+        self.assertEqual(list(self.output.glob(".bci-download-*")), [])
+        self.assertEqual(signal.getsignal(signal.SIGALRM), handler)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
+
     def test_bundled_checksums_cover_every_headset(self) -> None:
         checksums = json.loads(CHECKSUMS.read_text())
         for headset in HEADSETS:
@@ -188,7 +305,7 @@ class DownloadTimeoutTest(unittest.TestCase):
                         destination.write_bytes(b"existing")
                         started = time.monotonic()
                         with self.assertRaisesRegex(PreparationError, "timed out|deadline"):
-                            download(
+                            download_from_url(
                                 f"http://127.0.0.1:{server.server_port}/{route}",
                                 destination,
                                 expected,
@@ -200,7 +317,9 @@ class DownloadTimeoutTest(unittest.TestCase):
                         self.assertEqual(list(Path(directory).iterdir()), [destination])
                         self.assertEqual(signal.getsignal(signal.SIGALRM), handler)
                         self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
-                download(f"http://127.0.0.1:{server.server_port}/ok", destination, expected, 1, 2)
+                download_from_url(
+                    f"http://127.0.0.1:{server.server_port}/ok", destination, expected, 1, 2
+                )
                 self.assertEqual(destination.read_bytes(), b"x")
         finally:
             server.shutdown()
