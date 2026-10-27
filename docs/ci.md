@@ -173,7 +173,9 @@ Configure these repository Actions variables to enable the SDK job:
 | `HOLOSCAN_CI_RUNNER_LABELS` | JSON array matching provisioned Linux GPU runners, for example `["self-hosted", "linux", "ARM64", "holoscan"]`. These are illustrative labels, not provisioned infrastructure. |
 | `HOLOSCAN_CI_SDK_IMAGE` | Explicit compatible development image tag or digest. The image must provide all selected applications' SDK components, CUDA/TensorRT/compiler dependencies, Python, CMake 4+, and Ninja. |
 
-Runners need Docker with NVIDIA Container Toolkit and access to the configured
+Self-hosted runners need Actions Runner v2.327.1 or newer for the workflow's
+Node.js 24 actions (see the [checkout requirements](https://github.com/actions/checkout/tree/v7.0.1#checkout-v5)).
+Runners also need Docker with NVIDIA Container Toolkit and access to the configured
 image. Prefer ephemeral runners. The image must expose its SDK through
 `HOLOSCAN_SDK_ROOT` or the CLI's standard `/opt/nvidia/holoscan` location, and
 support application execution as the runner's numeric UID/GID. The container's
