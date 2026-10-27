@@ -114,10 +114,15 @@ holoscan run apriltag_detection --run-args='--backend cuda --count 300 --period-
 ## Tests
 
 `holoscan test apriltag_detection --no-xvfb` checks every backend against ground truth from host
-and GPU memory, the CUDA backend against the CPU on tags cut by the image edge, the operators
+and GPU memory (four families, among them `tagCircle21h7`, and two-bit correction), that frames
+over a capacity report what they dropped, the CUDA backend against the CPU on tags cut by the
+image edge, the operators
 through the SDK's test harness, the application's runs, exit statuses and display graph, and the
 overlay's axis drawing, which needs no SDK and also runs on hosted CI. Validated on x86_64 (RTX
-5090, CUDA 13.2, VPI 4.0.5: `cpu`, `cuda` and `vpi` on the CPU). Not run yet: PVA, aarch64.
+5090, CUDA 13.2, VPI 4.0.5: `cpu`, `cuda` and `vpi` on the CPU) and on aarch64, a Jetson Thor
+(JetPack 7, SDK 5.0.0, CUDA 13.0: `cpu`, `cuda` and `vpi` on the PVA). On the Thor, the `ci` mode
+found all 120 tags with each backend, with median latencies at 1280x720 of 37.9 ms (`cpu`), 14.2 ms
+(`cuda`) and 11.7 ms (`vpi` on the PVA).
 
 ## Licenses
 
