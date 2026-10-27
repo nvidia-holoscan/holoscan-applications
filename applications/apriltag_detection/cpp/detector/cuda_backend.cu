@@ -71,6 +71,7 @@ struct DecodedTag {
   std::uint32_t cluster;
   double center[2];
   double corners[4][2];
+  double shortest_side;  // Of the corners' quad, for the duplicate check.
 };
 
 // The one block copied to the host per frame. Each count includes what did not
@@ -700,6 +701,12 @@ __device__ bool decode(const Quad& quad, const DeviceGray& image, const FamilyPa
         project(h, ideal_x(i), ideal_y(i), out.corners[i]);
       }
       project(h, 0.0, 0.0, out.center);
+      out.shortest_side = HUGE_VAL;
+      for (int i = 0; i < 4; ++i) {
+        const double* a = out.corners[i];
+        const double* b = out.corners[(i + 1) % 4];
+        out.shortest_side = fmin(out.shortest_side, hypot(b[0] - a[0], b[1] - a[1]));
+      }
       return true;
     }
     code = rotate(family, code);
@@ -725,16 +732,6 @@ __global__ void decode_kernel(const Quad* quads, const std::uint32_t* quad_count
   }
 }
 
-__device__ double shortest_side(const DecodedTag& tag) {
-  double side = HUGE_VAL;
-  for (int i = 0; i < 4; ++i) {
-    const double* a = tag.corners[i];
-    const double* b = tag.corners[(i + 1) % 4];
-    side = fmin(side, hypot(b[0] - a[0], b[1] - a[1]));
-  }
-  return side;
-}
-
 // Ranks a before b: fewer corrected bits, then a higher margin, then the
 // earlier cluster.
 __device__ bool ranks_before(const DecodedTag& a, const DecodedTag& b) {
@@ -743,24 +740,41 @@ __device__ bool ranks_before(const DecodedTag& a, const DecodedTag& b) {
   return a.cluster < b.cluster;
 }
 
-// One thread. Several quads can frame one tag (outer and inner border edges,
-// both polarities); keeps the best decode of each, in rank order.
-__global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* quad_count,
+// One block of kMaxQuads threads. Several quads can frame one tag (outer and
+// inner border edges, both polarities); keeps the best decode of each, in rank
+// order. Each thread ranks its own decode against all the others, in the order
+// a stable sort would give; one thread then drops the duplicates, comparing
+// only decodes of one id in full.
+__global__ void __launch_bounds__(kMaxQuads)
+    select_kernel(const DecodedTag* decoded, const std::uint32_t* quad_count,
                               const std::uint32_t* job_count, const SegmentCounts* counts,
                               FrameResult* result) {
   const std::uint32_t quads = min(*quad_count, kMaxQuads);
-  std::uint16_t order[kMaxQuads];
-  std::uint32_t found = 0;
-  for (std::uint32_t q = 0; q < quads; ++q) {
-    if (!decoded[q].valid) continue;
-    std::uint32_t slot = found++;
-    while (slot > 0 && ranks_before(decoded[q], decoded[order[slot - 1]])) {
-      order[slot] = order[slot - 1];
-      --slot;
-    }
-    order[slot] = static_cast<std::uint16_t>(q);
+  __shared__ std::uint16_t order[kMaxQuads];
+  __shared__ std::uint16_t kept[kMaxQuads];
+  __shared__ std::uint32_t found;
+  if (threadIdx.x == 0) {
+    found = 0;
   }
-  std::uint16_t kept[kMaxQuads];
+  __syncthreads();
+  for (std::uint32_t q = threadIdx.x; q < quads; q += blockDim.x) {
+    if (!decoded[q].valid) continue;
+    std::uint32_t rank = 0;
+    for (std::uint32_t r = 0; r < quads; ++r) {
+      if (r == q || !decoded[r].valid) continue;
+      // Ties keep index order, as a stable sort would.
+      if (ranks_before(decoded[r], decoded[q]) ||
+          (r < q && !ranks_before(decoded[q], decoded[r]))) {
+        ++rank;
+      }
+    }
+    order[rank] = static_cast<std::uint16_t>(q);
+    atomicAdd(&found, 1U);
+  }
+  __syncthreads();
+  if (threadIdx.x != 0) {
+    return;
+  }
   std::uint32_t count = 0;
   for (std::uint32_t k = 0; k < found; ++k) {
     const DecodedTag& candidate = decoded[order[k]];
@@ -770,7 +784,7 @@ __global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* qu
       duplicate =
           other.id == candidate.id &&
           hypot(other.center[0] - candidate.center[0], other.center[1] - candidate.center[1]) <
-              0.5 * fmin(shortest_side(other), shortest_side(candidate));
+              0.5 * fmin(other.shortest_side, candidate.shortest_side);
     }
     if (!duplicate) {
       kept[count++] = order[k];
@@ -858,7 +872,7 @@ class CudaBackend final : public DetectorBackend {
     const DeviceGray gray{image.data, width_, height_, image.pitch};
     decode_kernel<<<kMaxQuads, kBlock, 0, stream>>>(quads_.get(), quad_count_.get(), gray, family_,
                                                     decoded_.get());
-    select_kernel<<<1, 1, 0, stream>>>(decoded_.get(), quad_count_.get(), quad_count_.get() + 1,
+    select_kernel<<<1, kMaxQuads, 0, stream>>>(decoded_.get(), quad_count_.get(), quad_count_.get() + 1,
                                        clusters.counts, result_.get());
     cuda_check(cudaGetLastError(), "CUDA backend kernels");
     // The one copy to the host, and the one wait.
