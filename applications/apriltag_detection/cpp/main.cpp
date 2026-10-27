@@ -338,7 +338,9 @@ int execute(const Options& opts, SignalDomain& signals) {
                                              .intrinsics = opts.intrinsics,
                                              .tag_size = opts.tag_size});
     // The frame's image must still be queued when its detections arrive, or Holoviz, which takes
-    // the newest image no newer than them, falls back to an older one: keep a few frames.
+    // the newest image no newer than them, falls back to an older one. The lossless detector
+    // edges keep the source at most three frames ahead of the first detector, so four images
+    // hold the frame unless the overlay and Holoviz take longer than the detector's next frame.
     const holoscan::ConnectionOptions recent{.queue_policy = holoscan::QueuePolicy::kDropOldest,
                                              .queue_depth = 4U};
     graph.add_flow(source->image, visualizer->image_layer_input(0), recent);
