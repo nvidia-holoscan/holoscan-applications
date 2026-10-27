@@ -334,7 +334,11 @@ int execute(const Options& opts, SignalDomain& signals) {
                                              .height = opts.height,
                                              .intrinsics = opts.intrinsics,
                                              .tag_size = opts.tag_size});
-    graph.add_flow(source->image, visualizer->image_layer_input(0), latest);
+    // The frame's image must still be queued when its detections arrive, or Holoviz, which takes
+    // the newest image no newer than them, falls back to an older one: keep a few frames.
+    const holoscan::ConnectionOptions recent{.queue_policy = holoscan::QueuePolicy::kDropOldest,
+                                             .queue_depth = 4U};
+    graph.add_flow(source->image, visualizer->image_layer_input(0), recent);
     graph.add_flow((*first_detector)->detections, overlay->detections, latest);
     graph.add_flow(overlay->axes, visualizer->image_layer_input(1), latest);
     graph.add_flow(overlay->labels, visualizer->tensor_layer_input(2), latest);
