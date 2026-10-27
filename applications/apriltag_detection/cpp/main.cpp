@@ -428,8 +428,9 @@ int execute(const Options& opts, SignalDomain& signals) {
         "labels", viz::TextLayerDesc{.max_glyphs = static_cast<std::uint32_t>(
                                          td::kMaxDetectionsPerFrame * td::kOverlayLabelBytes),
                                      .normalized_coordinates = true});
-    // Outlines carry their frame's capture time, so they reach Holoviz as old as
-    // the detection latency; allow for the slowest backend, or they vanish.
+    // A frame is drawn when its outlines arrive, over the newest image: the
+    // image they were detected in, since the next one comes a period later.
+    // Triggering on the image would draw the previous frame's outlines over it.
     const auto max_input_age = std::max(4 * period, std::chrono::milliseconds{250});
     auto visualizer = graph.op<viz::HolovizOp>(
         "holoviz", std::move(layers),
@@ -437,7 +438,7 @@ int execute(const Options& opts, SignalDomain& signals) {
                                      std::string(td::backend_name(opts.backends.front())) + ")",
                             .width = static_cast<std::uint32_t>(image_width),
                             .height = static_cast<std::uint32_t>(image_height)},
-        viz::FrameTrigger{viz::LayerTrigger{0}}, max_input_age);
+        viz::FrameTrigger{viz::LayerTrigger{1}}, max_input_age);
     // The display is best effort: it keeps the newest sample and never holds
     // back the detectors.
     const holoscan::ConnectionOptions latest{.queue_policy = holoscan::QueuePolicy::kDropOldest,

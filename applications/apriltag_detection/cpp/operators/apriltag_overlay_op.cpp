@@ -73,7 +73,7 @@ holoscan::expected<void, holoscan::Error> AprilTagOverlayOp::compute(
       message.image_height > 0 ? 1.0F / static_cast<float>(message.image_height) : 0.0F;
   const std::size_t tags = std::min(message.detections.size(), kMaxDetectionsPerFrame);
   // The frame's capture time, so Holoviz draws these over the image they came
-  // from, or one close to it, and drops them once stale.
+  // from.
   holoscan::EmitOptions emit = holoscan::sensor_io::derive_from(*received);
   if (!received->metadata.source_clock_id.valid()) {
     // Unstamped detections: Holoviz selects layers by capture time, so stamp
@@ -117,9 +117,6 @@ holoscan::expected<void, holoscan::Error> AprilTagOverlayOp::compute(
       });
   if (!lines_written) {
     return holoscan::make_unexpected(std::move(lines_written).error());
-  }
-  if (auto sent = outlines.emit(std::move(*line_loan), emit); !sent) {
-    return sent;
   }
 
   const std::array<std::int64_t, 2> label_shape{static_cast<std::int64_t>(kMaxDetectionsPerFrame),
@@ -167,7 +164,11 @@ holoscan::expected<void, holoscan::Error> AprilTagOverlayOp::compute(
   if (!labels_written) {
     return holoscan::make_unexpected(std::move(labels_written).error());
   }
-  return labels.emit(std::move(*label_loan), emit);
+  // Labels first: the outlines trigger the frame, which takes the newest labels.
+  if (auto sent = labels.emit(std::move(*label_loan), emit); !sent) {
+    return sent;
+  }
+  return outlines.emit(std::move(*line_loan), emit);
 }
 
 }  // namespace tag_detection
