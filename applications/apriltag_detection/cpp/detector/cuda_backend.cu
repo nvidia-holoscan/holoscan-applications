@@ -49,6 +49,8 @@ constexpr std::uint32_t kMaxJobs = 4096;
 // Most samples taken along one edge when refining it: enough for 8192 pixels.
 constexpr int kMaxEdgeSamples = 1024;
 constexpr int kBlock = 128;
+// Threads that rank one frame's decodes.
+constexpr int kSelectThreads = 256;
 
 struct Line {
   double point[2];      // The weighted centroid of its samples.
@@ -740,13 +742,12 @@ __device__ bool ranks_before(const DecodedTag& a, const DecodedTag& b) {
   return a.cluster < b.cluster;
 }
 
-// One block of kMaxQuads threads. Several quads can frame one tag (outer and
-// inner border edges, both polarities); keeps the best decode of each, in rank
-// order. Each thread ranks its own decode against all the others, in the order
-// a stable sort would give; one thread then drops the duplicates, comparing
-// only decodes of one id in full.
-__global__ void __launch_bounds__(kMaxQuads)
-    select_kernel(const DecodedTag* decoded, const std::uint32_t* quad_count,
+// One block. Several quads can frame one tag (outer and inner border edges,
+// both polarities); keeps the best decode of each, in rank order. Each thread
+// ranks its decodes against all the others, in the order a stable sort would
+// give; one thread then drops the duplicates, comparing only decodes of one id
+// in full.
+__global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* quad_count,
                               const std::uint32_t* job_count, const SegmentCounts* counts,
                               FrameResult* result) {
   const std::uint32_t quads = min(*quad_count, kMaxQuads);
@@ -872,8 +873,8 @@ class CudaBackend final : public DetectorBackend {
     const DeviceGray gray{image.data, width_, height_, image.pitch};
     decode_kernel<<<kMaxQuads, kBlock, 0, stream>>>(quads_.get(), quad_count_.get(), gray, family_,
                                                     decoded_.get());
-    select_kernel<<<1, kMaxQuads, 0, stream>>>(decoded_.get(), quad_count_.get(), quad_count_.get() + 1,
-                                       clusters.counts, result_.get());
+    select_kernel<<<1, kSelectThreads, 0, stream>>>(
+        decoded_.get(), quad_count_.get(), quad_count_.get() + 1, clusters.counts, result_.get());
     cuda_check(cudaGetLastError(), "CUDA backend kernels");
     // The one copy to the host, and the one wait.
     cuda_check(cudaMemcpyAsync(host_result_.get(), result_.get(), sizeof(FrameResult),
