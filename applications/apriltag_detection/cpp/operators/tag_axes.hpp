@@ -69,36 +69,32 @@ inline std::optional<TagAxes> tag_axes(const Detection& detection,
   return TagAxes{*origin, {project(l, 0, 0), project(0, l, 0), project(0, 0, l)}};
 }
 
-// A 2 px line from a to b, clipped to the canvas.
+// A 2 px line from a to b; pixels outside the canvas are skipped.
 inline void draw_line(const RgbaCanvas& canvas, Pixel a, Pixel b, const Rgba& color) {
-  const double dx = b[0] - a[0];
-  const double dy = b[1] - a[1];
+  double dx = b[0] - a[0];
+  double dy = b[1] - a[1];
   if (!std::isfinite(dx) || !std::isfinite(dy)) return;
-  // Liang-Barsky against [-1, size], which holds every pixel the line can touch.
-  double t0 = 0.0;
-  double t1 = 1.0;
-  const double p[4] = {-dx, dx, -dy, dy};
-  const double q[4] = {a[0] + 1.0, canvas.width - a[0], a[1] + 1.0, canvas.height - a[1]};
-  for (int i = 0; i < 4; ++i) {
-    if (p[i] == 0.0) {
-      if (q[i] < 0.0) return;
-    } else if (p[i] < 0.0) {
-      t0 = std::max(t0, q[i] / p[i]);
-    } else {
-      t1 = std::min(t1, q[i] / p[i]);
-    }
+  // Shorten a line reaching far past the canvas, such as to a tip projected
+  // near the camera plane, so stepping along it stays cheap.
+  const double reach = 2.0 * (canvas.width + canvas.height);
+  const double length = std::max(std::abs(dx), std::abs(dy));
+  if (length > reach) {
+    dx *= reach / length;
+    dy *= reach / length;
   }
-  if (t0 > t1) return;
   // Step at most a pixel at a time, setting the 2x2 pixels around each point.
-  const int steps = static_cast<int>(std::ceil(std::max(std::abs(dx), std::abs(dy)) * (t1 - t0)));
+  const int steps = static_cast<int>(std::ceil(std::min(length, reach)));
   for (int s = 0; s <= steps; ++s) {
-    const double t = t0 + (t1 - t0) * (steps == 0 ? 0.0 : static_cast<double>(s) / steps);
-    const int x0 = static_cast<int>(std::floor(a[0] + t * dx - 0.5));
-    const int y0 = static_cast<int>(std::floor(a[1] + t * dy - 0.5));
-    for (int y = std::max(y0, 0); y <= std::min(y0 + 1, canvas.height - 1); ++y) {
-      for (int x = std::max(x0, 0); x <= std::min(x0 + 1, canvas.width - 1); ++x) {
-        std::copy(color.begin(), color.end(),
-                  canvas.pixels + (static_cast<std::size_t>(y) * canvas.width + x) * 4);
+    const double t = steps == 0 ? 0.0 : static_cast<double>(s) / steps;
+    const double left = std::floor(a[0] + t * dx - 0.5);
+    const double top = std::floor(a[1] + t * dy - 0.5);
+    if (!(left >= -1.0 && left < canvas.width && top >= -1.0 && top < canvas.height)) continue;
+    for (int y = static_cast<int>(top); y <= static_cast<int>(top) + 1; ++y) {
+      for (int x = static_cast<int>(left); x <= static_cast<int>(left) + 1; ++x) {
+        if (x >= 0 && y >= 0 && x < canvas.width && y < canvas.height) {
+          std::copy(color.begin(), color.end(),
+                    canvas.pixels + (static_cast<std::size_t>(y) * canvas.width + x) * 4);
+        }
       }
     }
   }
