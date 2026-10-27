@@ -40,7 +40,12 @@
         },
         {
           "name": "PVA",
-          "description": "The Programmable Vision Accelerator of Jetson Orin or Thor, for the vpi-pva backend. Elsewhere VPI runs on the CPU.",
+          "description": "The Programmable Vision Accelerator of Jetson Orin or Thor, used by the vpi backend when present. Elsewhere VPI runs on the CPU.",
+          "required": false
+        },
+        {
+          "name": "Webcam",
+          "description": "A V4L2 camera offering YUYV, for the camera mode, which also needs a display.",
           "required": false
         }
       ]
