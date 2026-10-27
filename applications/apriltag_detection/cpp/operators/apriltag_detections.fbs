@@ -48,6 +48,9 @@ table AprilTagDetections {
   // The detector ran out of capacity before decoding (boundary points, quad
   // candidates or quads), so tags in this frame may be missing.
   truncated: bool (id: 8);
+  // The image header's device_sequence: its source's sample number, or 0 when
+  // the source numbers none.
+  device_sequence: ulong (id: 9);
 }
 
 root_type AprilTagDetections;

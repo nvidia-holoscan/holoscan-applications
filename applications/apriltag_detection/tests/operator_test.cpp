@@ -226,10 +226,11 @@ void check_detector_truncated() {
   VERIFY(messages.front().detections.empty() && messages.front().dropped == 0);
 }
 
-// Detections carry their image's capture time and frame identity.
+// Detections carry their image's capture time, frame identity and device sequence.
 void check_detector_provenance() {
   constexpr std::chrono::nanoseconds kCaptured = std::chrono::milliseconds(250);
   constexpr std::uint64_t kFrameId = 42;
+  constexpr std::uint64_t kSequence = 17;
   auto h = holoscan::testing::create_operator_test<AprilTagDetectorOp>(
       AprilTagDetectorConfig{.backend = Backend::kCpu});
   holoscan::testing::TestSample<holoscan::schema::ImageT> sample{
@@ -237,6 +238,8 @@ void check_detector_provenance() {
                           holoscan::schema::ImageEncoding_MONO8),
       .capture_coordinate = kCaptured};
   sample.metadata.frame_id = kFrameId;
+  sample.data.header = std::make_shared<holoscan::schema::HeaderT>();
+  sample.data.header->device_sequence = kSequence;
   h.push_samples<holoscan::schema::ImageT>("image", {std::move(sample)});
   h.capture<schema::AprilTagDetectionsT>("detections");
   const auto result = h.run();
@@ -249,6 +252,9 @@ void check_detector_provenance() {
   VERIFY(metadata.source_clock_id.valid() && metadata.capture_timestamp_ns == kCaptured.count());
   VERIFY_MSG(metadata.frame_id == kFrameId,
              "frame id " + std::to_string(metadata.frame_id) + " forwarded");
+  VERIFY_MSG(samples.front().data.device_sequence == kSequence,
+             "device sequence " + std::to_string(samples.front().data.device_sequence) +
+                 " forwarded");
 }
 
 // How long the unrelated stream below is held.
@@ -377,6 +383,60 @@ void check_report_counts() {
   VERIFY(report->frames == 2 && report->tags == 2 && report->detect_ms.size() == 2);
   VERIFY(report->detect_ms.front() == 1.5F);
   VERIFY(!report->verified && report->passed());
+}
+
+// A perfect detection message for synthetic frame `frame`, numbered as the
+// source numbers it.
+schema::AprilTagDetectionsT truth_message(std::uint32_t frame) {
+  const SyntheticScene scene = make_scene("tag36h11", frame, kWidth, kHeight);
+  schema::AprilTagDetectionsT message;
+  message.device_sequence = std::uint64_t{frame} + 1U;
+  message.image_width = kWidth;
+  message.image_height = kHeight;
+  message.backend = "cpu";
+  message.family = "tag36h11";
+  for (const SceneTag& tag : scene.tags) {
+    const auto projected = project_corners(tag, scene.intrinsics, scene.tag_size);
+    std::array<schema::Point2f, 4> corners;
+    float cx = 0.0F;
+    float cy = 0.0F;
+    for (int c = 0; c < 4; ++c) {
+      corners[c] = schema::Point2f(static_cast<float>(projected[c][0]),
+                                   static_cast<float>(projected[c][1]));
+      cx += corners[c].x() / 4.0F;
+      cy += corners[c].y() / 4.0F;
+    }
+    const std::array<float, 9> rotation{};
+    const std::array<float, 3> translation{};
+    message.detections.push_back(schema::TagDetection(
+        tag.id, 0, 50.0F, schema::Point2f(cx, cy),
+        ::flatbuffers::span<const schema::Point2f, 4>(corners), false,
+        ::flatbuffers::span<const float, 9>(rotation),
+        ::flatbuffers::span<const float, 3>(translation), 0.0F));
+  }
+  return message;
+}
+
+// Ground truth follows the source's numbering, so frames lost on the way do
+// not shift the frames after them; unnumbered frames cannot be checked.
+void check_report_truth() {
+  const auto run = [](std::vector<schema::AprilTagDetectionsT> messages) {
+    auto report = std::make_shared<BackendReport>();
+    auto h = holoscan::testing::create_operator_test<DetectionReportOp>(DetectionReportConfig{
+        .report = report,
+        .remaining = std::make_shared<std::atomic<int>>(),
+        .truth = GroundTruth{"tag36h11", kWidth, kHeight}});
+    for (auto& message : messages) h.push("detections", std::move(message));
+    return std::make_pair(h.run().ok(), report);
+  };
+  const auto [ok, report] = run({truth_message(0), truth_message(2), truth_message(5)});
+  VERIFY(ok);
+  VERIFY_MSG(report->verified && report->passed() && report->expected_tags == 12,
+             "missed " + std::to_string(report->missed_tags) + ", extra " +
+                 std::to_string(report->extra_tags) + " with frames 1, 3 and 4 lost");
+  schema::AprilTagDetectionsT unnumbered = truth_message(0);
+  unnumbered.device_sequence = 0;
+  VERIFY_MSG(!run({std::move(unnumbered)}).first, "an unnumbered frame fails the run");
 }
 
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
@@ -519,6 +579,8 @@ int main() {
   cases.push_back({"detector keeps off the legacy default stream with host input",
                    tag_detection::check_detector_stream_with_host_input});
   cases.push_back({"reporter counts", tag_detection::check_report_counts});
+  cases.push_back({"reporter keys ground truth on the source's numbering",
+                   tag_detection::check_report_truth});
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
   cases.push_back({"overlay layers", tag_detection::check_overlay});
   cases.push_back({"overlay axes with a pose", tag_detection::check_overlay_pose});

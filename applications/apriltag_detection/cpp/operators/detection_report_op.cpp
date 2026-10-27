@@ -45,7 +45,9 @@ holoscan::expected<void, holoscan::Error> DetectionReportOp::compute(
   report.truncated_frames += message.truncated ? 1U : 0U;
   report.detect_ms.push_back(message.detect_time_us / 1000.0F);
   if (config_.truth) {
-    verify(message);
+    if (auto verified = verify(message); !verified) {
+      return verified;
+    }
   }
   if (!finished_ && config_.expected_frames != 0 && report.frames >= config_.expected_frames) {
     finished_ = true;
@@ -56,12 +58,21 @@ holoscan::expected<void, holoscan::Error> DetectionReportOp::compute(
   return {};
 }
 
-void DetectionReportOp::verify(const schema::AprilTagDetectionsT& message) {
+holoscan::expected<void, holoscan::Error> DetectionReportOp::verify(
+    const schema::AprilTagDetectionsT& message) {
+  // The source's frame number, not the detector's count, so a frame lost on the
+  // way cannot shift every later frame's ground truth.
+  if (message.device_sequence == 0) {
+    return holoscan::make_unexpected(holoscan::Error{
+        holoscan::ErrorCode::kInvalidArgument,
+        "DetectionReportOp: ground truth needs images numbered by header.device_sequence"});
+  }
   BackendReport& report = *config_.report;
   report.verified = true;
   const GroundTruth& truth = *config_.truth;
-  const SyntheticScene scene = make_scene(truth.family, static_cast<std::uint32_t>(message.frame),
-                                          truth.width, truth.height);
+  const SyntheticScene scene =
+      make_scene(truth.family, static_cast<std::uint32_t>(message.device_sequence - 1U),
+                 truth.width, truth.height);
   std::vector<Detection> found;
   for (const schema::TagDetection& tag : message.detections) found.push_back(from_message(tag));
   const TruthCounts counts = match_truth(scene, found, [&report](const TruthMatch& match) {
@@ -81,6 +92,7 @@ void DetectionReportOp::verify(const schema::AprilTagDetectionsT& message) {
   report.expected_tags += scene.tags.size();
   report.extra_tags += counts.extra;
   report.missed_tags += counts.missed;
+  return {};
 }
 
 }  // namespace tag_detection

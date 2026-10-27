@@ -63,7 +63,8 @@ Each run prints a line per backend with its frame and tag counts, detection late
 interrupt or a closed window ends it early. It exits 0 on `PASS`, 2 for invalid options, else 1.
 
 The operator emits one `AprilTagDetections` message per image
-([schema](cpp/operators/apriltag_detections.fbs)): frame number, image size, backend, family,
+([schema](cpp/operators/apriltag_detections.fbs)): frame number, the image header's
+`device_sequence`, image size, backend, family,
 detection time, the tags dropped past its 64, whether the detector ran out of capacity before
 decoding (tags may then be missing; it also logs a warning), and per tag its id, corrected bits, decision margin, center, corners (from the
 tag's bottom-left, counter-clockwise as printed) and, with intrinsics, its pose. Poses place the tag

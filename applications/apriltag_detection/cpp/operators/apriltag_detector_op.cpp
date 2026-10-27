@@ -242,6 +242,7 @@ holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
 
   schema::AprilTagDetectionsT message;
   message.frame = frames_++;
+  message.device_sequence = sample->data.header ? sample->data.header->device_sequence : 0U;
   message.image_width = view->width;
   message.image_height = view->height;
   message.backend = std::string(backend_->name());

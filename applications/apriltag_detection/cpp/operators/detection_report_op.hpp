@@ -48,7 +48,8 @@ struct BackendReport {
   }
 };
 
-// The synthetic scene the detections should match.
+// The synthetic scenes the detections should match: each message's is
+// make_scene(family, device_sequence - 1, width, height), as FrameSourceOp numbers them.
 struct GroundTruth {
   std::string family;
   int width{};
@@ -83,7 +84,8 @@ class DetectionReportOp final : public holoscan::Operator<> {
   holoscan::Input<schema::AprilTagDetectionsT> detections;
 
  private:
-  void verify(const schema::AprilTagDetectionsT& message);
+  [[nodiscard]] holoscan::expected<void, holoscan::Error> verify(
+      const schema::AprilTagDetectionsT& message);
 
   DetectionReportConfig config_;
   bool finished_{};

@@ -26,7 +26,8 @@ void image_output(holoscan::OperatorSpec& spec, holoscan::Output<holoscan::schem
                   int channels);
 
 struct FrameSourceConfig {
-  // RGB8 renderings of make_scene(family, frame, width, height).
+  // RGB8 renderings of make_scene(family, frame, width, height), each with
+  // header.device_sequence frame + 1 (zero would mean unnumbered).
   std::string family{"tag36h11"};
   int width{1280};
   int height{720};

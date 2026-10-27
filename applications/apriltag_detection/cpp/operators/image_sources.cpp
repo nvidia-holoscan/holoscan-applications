@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -123,6 +124,8 @@ holoscan::expected<void, holoscan::Error> FrameSourceOp::compute(
   descriptor.width = config_.width;
   descriptor.height = config_.height;
   descriptor.encoding = holoscan::schema::ImageEncoding_RGB8;
+  descriptor.header = std::make_shared<holoscan::schema::HeaderT>();
+  descriptor.header->device_sequence = std::uint64_t{emitted_} + 1U;
   auto emitted =
       image.emit_tensor(std::move(*loan), descriptor,
                         holoscan::EmitOptions{.capture_time = context.activation_time()});
