@@ -39,7 +39,8 @@ constexpr std::uint32_t kMaxQuads = 1024;
 constexpr std::uint32_t kMaxResults = 128;
 // Adjacent edges whose directions' |cos| exceeds this are rejected (10 deg).
 constexpr double kMaxEdgeCos = 0.984807753;
-// Largest mean squared line-fit error per edge, in doubled decimated pixels.
+// Largest mean squared line-fit error per edge, in decimated pixels (AprilTag 3's
+// units; see LineMoments).
 constexpr double kMaxLineFitMse = 10.0;
 // Bits of the largest family, tagStandard52h13, and cells across its grid.
 constexpr int kMaxBits = 64;

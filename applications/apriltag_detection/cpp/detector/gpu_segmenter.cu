@@ -283,8 +283,8 @@ __global__ void edge_points_kernel(const std::uint8_t* image, const std::uint8_t
     if (sizes[root1] < kMinComponentSize) {
       continue;
     }
-    // Past the buffer's end the point is only counted, so the caller can grow
-    // the buffers to the true total and gather again.
+    // Past the buffer's end the point is only counted, so the frame can report
+    // how many were dropped.
     const std::uint32_t slot = atomicAdd(counter, 1U);
     if (slot >= capacity) {
       continue;
