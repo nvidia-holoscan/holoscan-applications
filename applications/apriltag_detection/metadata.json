@@ -11,7 +11,7 @@
     "language": "C++",
     "version": "1.0.0",
     "changelog": {
-      "1.0.0": "Initial release: AprilTagDetectorOp with cpu, cuda and vpi backends, synthetic and image-folder sources, Holoviz overlay."
+      "1.0.0": "Initial release: AprilTagDetectorOp with cpu, cuda and vpi backends; synthetic, image-folder and webcam sources; Holoviz overlay."
     },
     "holoscan_sdk": {
       "minimum_required_version": "5.0.0",
@@ -61,10 +61,10 @@
           "workdir": "holohub_app_bin"
         }
       },
-      "benchmark": {
-        "description": "Run every compiled backend side by side on the same 300 synthetic frames, without a display, and print each one's latency.",
+      "camera": {
+        "description": "Live webcam with the HoloViz overlay; needs /dev/video0 and a display.",
         "run": {
-          "command": "\"<holohub_app_bin>/apriltag_detection\" --backend all --count 300 --period-ms 1 --display false",
+          "command": "\"<holohub_app_bin>/apriltag_detection\" --source camera --backend cuda",
           "workdir": "holohub_app_bin"
         }
       },
