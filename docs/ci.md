@@ -225,9 +225,11 @@ integration is implied by the SDK job.
 - Repository hooks check SPDX identifiers, copyright notices, internal staging
   references, and Holoscan metadata using `check_copyright.py`, `check_internal_artifacts.py`, and
   `validate_metadata.py` in `.github/scripts/`. Each script accepts filenames
-  as arguments and can also be run directly from the repository root. Metadata
-  validation uses the CLI and `jsonschema` from `requirements.txt`; the hooks
-  require no SDK or GPU. Their regression tests run with the shared driver tests.
+  as arguments and can also be run directly from the repository root. The
+  metadata hook installs the CLI and `jsonschema` into its own pre-commit
+  environment, pinned to the versions in `requirements.txt`, so it also runs on
+  pre-commit.ci; the hooks require no SDK or GPU. Their regression tests run
+  with the shared driver tests.
 
 The SPDX hook requires an Apache-2.0 license identifier and a copyright notice
 with a holder and a valid year or year range. It accepts SPDX copyright notices
