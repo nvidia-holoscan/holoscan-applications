@@ -399,6 +399,13 @@ holoscan::expected<void, holoscan::Error> CameraSourceOp::compute(
     }
     return holoscan::make_unexpected(failure("VIDIOC_DQBUF: " + std::string(std::strerror(errno))));
   }
+  // Frames that queued up while we were busy are stale: keep only the newest.
+  for (v4l2_buffer newer = buffer; xioctl(fd_, VIDIOC_DQBUF, &newer) == 0; buffer = newer) {
+    if (xioctl(fd_, VIDIOC_QBUF, &buffer) != 0) {
+      return holoscan::make_unexpected(
+          failure("VIDIOC_QBUF: " + std::string(std::strerror(errno))));
+    }
+  }
   // The frame's capture time on the graph's clock: now, less its age on the
   // monotonic clock V4L2 stamps it with.
   holoscan::TimePoint captured = context.activation_time();
