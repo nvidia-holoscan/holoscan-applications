@@ -7,6 +7,11 @@ Thor (NVIDIA VPI). The application renders synthetic scenes, fans each frame out
 selected backend, checks every detection against the scene's ground truth, and can show the first
 backend's detections on a HoloViz display.
 
+## Demo
+
+Videos of the application on synthetic input and on real input go in
+[tests/video](tests/video).
+
 ## Backends
 
 | Backend | Detection runs on | Notes |
