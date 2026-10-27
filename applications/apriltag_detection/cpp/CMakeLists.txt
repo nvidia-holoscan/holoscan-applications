@@ -77,7 +77,6 @@ add_library(apriltag_detection_core STATIC
   detector/detector_backend.cpp
   detector/gpu_segmenter.cu
   detector/gray_converter.cu
-  detector/pnm_image.cpp
   detector/pose.cpp
   detector/synthetic_scene.cpp
   detector/tag_family.cpp)

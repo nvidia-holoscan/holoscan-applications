@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// AprilTag Detection: one source (synthetic scenes, image files or a webcam) fans
-// out to an AprilTagDetectorOp per backend, each feeding a reporter; the first
-// can also draw on a Holoviz display.
+// AprilTag Detection: a synthetic scene source fans out to an AprilTagDetectorOp
+// per backend, each feeding a reporter that checks it against ground truth; the
+// first can also draw on a Holoviz display.
 
 #include <algorithm>
 #include <atomic>
@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
-#include <filesystem>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -42,7 +41,6 @@
 #endif
 
 #include "detector/detection.hpp"
-#include "detector/pnm_image.hpp"
 #include "detector/synthetic_scene.hpp"
 #include "operators/apriltag_detector_op.hpp"
 #include "operators/detection_report_op.hpp"
@@ -56,23 +54,20 @@ namespace td = tag_detection;
 constexpr std::string_view kAppName = "apriltag_detection";
 
 enum class DisplayMode { kAuto, kOn, kOff };
-enum class Source { kSynthetic, kImages, kCamera };
 
 // How long a finite run may take beyond its expected time.
 constexpr auto kTimeoutAllowance = std::chrono::seconds{120};
 
 struct Options {
-  Source source{Source::kSynthetic};
-  std::filesystem::path images;
-  std::filesystem::path device{"/dev/video0"};
   std::vector<td::Backend> backends{td::Backend::kCuda};
   td::DetectorOptions detector;
-  double tag_size{0.12};
-  std::optional<td::CameraIntrinsics> intrinsics;
-  std::optional<int> width;
-  std::optional<int> height;
-  std::optional<std::uint32_t> count;
+  int width{1280};
+  int height{720};
+  std::uint32_t count{300};
   std::uint32_t period_ms{33};
+  // The scene's, for the detectors' poses.
+  td::CameraIntrinsics intrinsics;
+  double tag_size{};
   bool device_input{false};
   DisplayMode display{DisplayMode::kAuto};
   bool compile_only{false};
@@ -97,11 +92,6 @@ void parse_number(std::string_view value, std::string_view option, T& result) {
     throw std::invalid_argument(std::string(option) + " requires a number, got '" +
                                 std::string(value) + "'");
   }
-}
-
-template <typename T>
-void parse_number(std::string_view value, std::string_view option, std::optional<T>& result) {
-  parse_number(value, option, result.emplace());
 }
 
 std::vector<td::Backend> parse_backends(std::string_view value) {
@@ -131,7 +121,6 @@ std::vector<td::Backend> parse_backends(std::string_view value) {
 
 Options parse_args(int argc, char** argv) {
   Options opts;
-  std::optional<double> fx, fy, cx, cy;
   using Parse = std::function<void(std::string_view value, std::string_view option)>;
   const auto number = [](auto& target) -> Parse {
     return [&target](std::string_view value, std::string_view option) {
@@ -144,28 +133,9 @@ Options parse_args(int argc, char** argv) {
     };
   };
   const std::pair<std::string_view, Parse> kOptions[] = {
-      {"--source",
-       [&](std::string_view value, std::string_view) {
-         if (value == "synthetic") {
-           opts.source = Source::kSynthetic;
-         } else if (value == "images") {
-           opts.source = Source::kImages;
-         } else if (value == "camera") {
-           opts.source = Source::kCamera;
-         } else {
-           throw std::invalid_argument("--source must be synthetic, images or camera");
-         }
-       }},
-      {"--images", [&](std::string_view value, std::string_view) { opts.images = value; }},
-      {"--device", [&](std::string_view value, std::string_view) { opts.device = value; }},
       {"--backend",
        [&](std::string_view value, std::string_view) { opts.backends = parse_backends(value); }},
       {"--family", [&](std::string_view value, std::string_view) { opts.detector.family = value; }},
-      {"--tag-size", number(opts.tag_size)},
-      {"--fx", number(fx)},
-      {"--fy", number(fy)},
-      {"--cx", number(cx)},
-      {"--cy", number(cy)},
       {"--decimate", number(opts.detector.decimate)},
       {"--max-hamming", number(opts.detector.max_hamming)},
       {"--refine-edges", flag(opts.detector.refine_edges)},
@@ -199,16 +169,6 @@ Options parse_args(int argc, char** argv) {
     }
     entry->second(argv[++i], option);
   }
-  const int given = fx.has_value() + fy.has_value() + cx.has_value() + cy.has_value();
-  if (given != 0 && given != 4) {
-    throw std::invalid_argument("--fx, --fy, --cx and --cy go together");
-  }
-  if (given == 4) {
-    if (opts.source == Source::kSynthetic) {
-      throw std::invalid_argument("--fx..--cy apply to --source images or camera only");
-    }
-    opts.intrinsics = td::CameraIntrinsics{*fx, *fy, *cx, *cy};
-  }
   return opts;
 }
 
@@ -216,18 +176,11 @@ void usage(const char* argv0) {
   std::cout
       << "Usage: " << argv0
       << " [options]\n"
-         "Input:\n"
-         "  --source synthetic|images|camera\n"
-         "                             Rendered tags with ground truth, image files, or a\n"
-         "                             V4L2 webcam (default: synthetic)\n"
-         "  --images DIR               PGM/PPM images, read once in name order\n"
-         "  --device PATH              The webcam (default: /dev/video0)\n"
-         "  --count N                  Frames (default: 300 synthetic, every image once,\n"
-         "                             camera until Ctrl+C)\n"
-         "  --period-ms N              Synthetic and image period, 1..1000 ms (default: 33)\n"
-         "  --width N --height N       Synthetic size (default: 1280x720), or a YUYV size\n"
-         "                             the camera offers (default: 640x480)\n"
-         "  --device-input true|false  Synthetic frames in GPU memory (default: false)\n"
+         "Input (rendered tags with ground truth):\n"
+         "  --count N                  Frames (default: 300)\n"
+         "  --period-ms N              Frame period, 1..1000 ms (default: 33)\n"
+         "  --width N --height N       Image size (default: 1280x720)\n"
+         "  --device-input true|false  Frames in GPU memory (default: false)\n"
          "Detection:\n"
          "  --backend LIST             Comma-separated: cpu, cuda, vpi, or all compiled\n"
          "                             backends (default: cuda)\n"
@@ -236,12 +189,9 @@ void usage(const char* argv0) {
          "  --decimate N               Detect quads at 1/N resolution, 1..8 (default: 2)\n"
          "  --refine-edges true|false  Refine edges at full resolution (default: true)\n"
          "  --sharpening X             Bit sharpening, 0..1 (default: 0.25)\n"
-         "Pose (--source images or camera; synthetic scenes provide their own):\n"
-         "  --fx F --fy F --cx C --cy C  Camera intrinsics in pixels\n"
-         "  --tag-size M               Black-border width in meters (default: 0.12)\n"
          "Output:\n"
          "  --display auto|true|false  Show the first backend's detections (default: auto,\n"
-         "                             on for the camera, else when a display is available)\n"
+         "                             on when a display is available)\n"
          "  --compile-only true|false  Build and compile the graph, then exit without running\n"
          "                             it (default: false)\n";
 }
@@ -250,42 +200,12 @@ void validate(Options& opts) {
   if (opts.period_ms == 0 || opts.period_ms > 1000) {
     throw std::invalid_argument("--period-ms must be 1..1000");
   }
-  if (opts.count && *opts.count == 0) {
+  if (opts.count == 0) {
     throw std::invalid_argument("--count must be positive");
   }
-  if (!opts.images.empty() && opts.source != Source::kImages) {
-    throw std::invalid_argument("--images needs --source images");
-  }
-  if (opts.device_input && opts.source != Source::kSynthetic) {
-    throw std::invalid_argument("--device-input applies to synthetic frames only");
-  }
-  if (opts.source == Source::kImages) {
-    if (opts.images.empty()) {
-      throw std::invalid_argument("--source images needs --images DIR");
-    }
-    if (opts.count || opts.width || opts.height) {
-      throw std::invalid_argument("--source images reads every image once at its own size");
-    }
-  } else if (opts.source == Source::kSynthetic) {
-    opts.width = opts.width.value_or(1280);
-    opts.height = opts.height.value_or(720);
-    opts.count = opts.count.value_or(300);
-    const td::SyntheticScene scene =
-        td::make_scene(opts.detector.family, 0, *opts.width, *opts.height);
-    opts.intrinsics = scene.intrinsics;
-    opts.tag_size = scene.tag_size;
-  } else {
-    opts.width = opts.width.value_or(640);
-    opts.height = opts.height.value_or(480);
-    td::check_camera(td::CameraSourceConfig{
-        .device = opts.device, .width = *opts.width, .height = *opts.height});
-    if (opts.display == DisplayMode::kAuto) {
-      opts.display = DisplayMode::kOn;
-    }
-  }
-  if (!(opts.tag_size > 0)) {
-    throw std::invalid_argument("--tag-size must be positive");
-  }
+  const td::SyntheticScene scene = td::make_scene(opts.detector.family, 0, opts.width, opts.height);
+  opts.intrinsics = scene.intrinsics;
+  opts.tag_size = scene.tag_size;
   td::validate_options(opts.detector);
   for (const td::Backend backend : opts.backends) {
     td::check_available(backend);
@@ -299,18 +219,14 @@ double percentile(std::vector<float> values, double fraction) {
   return values[index];
 }
 
-// `expected_frames` is 0 for a live camera run, which has no expected count.
 void print_report(const td::BackendReport& report, std::uint32_t expected_frames) {
   double mean = 0.0;
   for (const float ms : report.detect_ms) mean += ms;
   mean = report.detect_ms.empty() ? 0.0 : mean / static_cast<double>(report.detect_ms.size());
   std::cout << std::fixed << std::setprecision(2) << kAppName << ": backend=" << report.backend
-            << " frames=" << report.frames;
-  if (expected_frames != 0) {
-    std::cout << '/' << expected_frames;
-  }
-  std::cout << " tags=" << report.tags << " detect_ms(mean/p50/p95/max)=" << mean << '/'
-            << percentile(report.detect_ms, 0.5) << '/' << percentile(report.detect_ms, 0.95) << '/'
+            << " frames=" << report.frames << '/' << expected_frames << " tags=" << report.tags
+            << " detect_ms(mean/p50/p95/max)=" << mean << '/' << percentile(report.detect_ms, 0.5)
+            << '/' << percentile(report.detect_ms, 0.95) << '/'
             << percentile(report.detect_ms, 1.0);
   if (report.verified) {
     std::cout << " truth: missed=" << report.missed_tags << " extra=" << report.extra_tags
@@ -330,35 +246,14 @@ using SignalDomain = holoscan::expected<holoscan::ManagedShutdownSignals, holosc
 int execute(const Options& opts, SignalDomain& signals) {
   holoscan::Graph graph{std::string(kAppName)};
   const auto period = std::chrono::milliseconds(opts.period_ms);
-  // Frames the run expects; 0 for a camera that runs until stopped.
-  std::uint32_t frames = opts.count.value_or(0);
-  int image_width = opts.width.value_or(0);
-  int image_height = opts.height.value_or(0);
-  int image_channels = 3;
-  const holoscan::Output<holoscan::schema::ImageT>* source_output = nullptr;
-  if (opts.source != Source::kCamera) {
-    td::FrameSourceConfig config{.family = opts.detector.family,
-                                 .width = image_width,
-                                 .height = image_height,
-                                 .count = frames,
-                                 .period = period,
-                                 .device_output = opts.device_input};
-    if (opts.source == Source::kImages) {
-      config.files = td::list_pnm_files(opts.images);
-      frames = static_cast<std::uint32_t>(config.files.size());
-    }
-    auto source = graph.op<td::FrameSourceOp>("source", std::move(config));
-    image_width = source->width();
-    image_height = source->height();
-    image_channels = source->channels();
-    source_output = &source->image;
-  } else {
-    auto source = graph.op<td::CameraSourceOp>(
-        "source",
-        td::CameraSourceConfig{
-            .device = opts.device, .width = image_width, .height = image_height, .count = frames});
-    source_output = &source->image;
-  }
+  const std::uint32_t frames = opts.count;
+  auto source = graph.op<td::FrameSourceOp>(
+      "source", td::FrameSourceConfig{.family = opts.detector.family,
+                                      .width = opts.width,
+                                      .height = opts.height,
+                                      .count = frames,
+                                      .period = period,
+                                      .device_output = opts.device_input});
 
   const bool display_available =
       env_set("DISPLAY") || (env_set("WAYLAND_DISPLAY") && env_set("XDG_RUNTIME_DIR"));
@@ -390,15 +285,14 @@ int execute(const Options& opts, SignalDomain& signals) {
     auto report = std::make_shared<td::BackendReport>();
     report->backend = name;
     reports.push_back(report);
-    std::optional<td::GroundTruth> truth;
-    if (opts.source == Source::kSynthetic) {
-      truth = td::GroundTruth{opts.detector.family, image_width, image_height};
-    }
     auto reporter = graph.op<td::DetectionReportOp>(
         "report_" + name,
         td::DetectionReportConfig{
-            .report = report, .remaining = remaining, .expected_frames = frames, .truth = truth});
-    graph.add_flow(*source_output, detector->image, lossless);
+            .report = report,
+            .remaining = remaining,
+            .expected_frames = frames,
+            .truth = td::GroundTruth{opts.detector.family, opts.width, opts.height}});
+    graph.add_flow(source->image, detector->image, lossless);
     graph.add_flow(detector->detections, reporter->detections, lossless);
     if (!first_detector) {
       first_detector.emplace(detector);
@@ -410,15 +304,14 @@ int execute(const Options& opts, SignalDomain& signals) {
     namespace viz = holoscan::visualization;
     viz::LayerStack layers;
     layers.add_image_layer(
-        "video", viz::ImageLayerDesc{.format = image_channels == 1 ? viz::ImageFormat::kR8Unorm
-                                                                   : viz::ImageFormat::kR8G8B8Unorm,
-                                     .max_width = static_cast<std::uint32_t>(image_width),
-                                     .max_height = static_cast<std::uint32_t>(image_height)});
+        "video", viz::ImageLayerDesc{.format = viz::ImageFormat::kR8G8B8Unorm,
+                                     .max_width = static_cast<std::uint32_t>(opts.width),
+                                     .max_height = static_cast<std::uint32_t>(opts.height)});
     // Holoviz blends RGBA image layers by their alpha, so the axes go over the video.
     layers.add_image_layer(
         "axes", viz::ImageLayerDesc{.format = viz::ImageFormat::kR8G8B8A8Unorm,
-                                    .max_width = static_cast<std::uint32_t>(image_width),
-                                    .max_height = static_cast<std::uint32_t>(image_height)});
+                                    .max_width = static_cast<std::uint32_t>(opts.width),
+                                    .max_height = static_cast<std::uint32_t>(opts.height)});
     layers.add_text_layer(
         "labels", viz::TextLayerDesc{.max_glyphs = static_cast<std::uint32_t>(
                                          td::kMaxDetectionsPerFrame * td::kOverlayLabelBytes),
@@ -430,24 +323,22 @@ int execute(const Options& opts, SignalDomain& signals) {
         "holoviz", std::move(layers),
         viz::WindowSinkDesc{.title = "AprilTag Detection (" +
                                      std::string(td::backend_name(opts.backends.front())) + ")",
-                            .width = static_cast<std::uint32_t>(image_width),
-                            .height = static_cast<std::uint32_t>(image_height)},
+                            .width = static_cast<std::uint32_t>(opts.width),
+                            .height = static_cast<std::uint32_t>(opts.height)},
         viz::FrameTrigger{viz::LayerTrigger{1}}, max_input_age);
     // Best effort: the display keeps the newest sample and never holds back the detectors.
     const holoscan::ConnectionOptions latest{.queue_policy = holoscan::QueuePolicy::kDropOldest,
                                              .queue_depth = 1U};
     auto overlay = graph.op<td::AprilTagOverlayOp>(
-        "overlay", td::AprilTagOverlayConfig{.width = image_width,
-                                             .height = image_height,
+        "overlay", td::AprilTagOverlayConfig{.width = opts.width,
+                                             .height = opts.height,
                                              .intrinsics = opts.intrinsics,
                                              .tag_size = opts.tag_size});
-    graph.add_flow(*source_output, visualizer->image_layer_input(0), latest);
+    graph.add_flow(source->image, visualizer->image_layer_input(0), latest);
     graph.add_flow((*first_detector)->detections, overlay->detections, latest);
     graph.add_flow(overlay->axes, visualizer->image_layer_input(1), latest);
     graph.add_flow(overlay->labels, visualizer->tensor_layer_input(2), latest);
   }
-#else
-  (void)image_channels;
 #endif
 
   graph.set_default_clock(graph.add_clock<holoscan::RealtimeClock>("clock"));
@@ -479,10 +370,9 @@ int execute(const Options& opts, SignalDomain& signals) {
     std::cerr << "; an interrupt ends the process without a report\n";
   }
   auto session = signals ? holoscan::run_async(plan, *signals) : holoscan::run_async(plan);
-  // A live camera run has no deadline; it ends when stopped.
   const auto deadline = std::chrono::steady_clock::now() + kTimeoutAllowance +
                         std::chrono::milliseconds(2LL * frames * opts.period_ms);
-  while (session.is_running() && (frames == 0 || std::chrono::steady_clock::now() < deadline)) {
+  while (session.is_running() && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(10ms);
   }
   const bool timed_out = session.is_running();
@@ -508,7 +398,7 @@ int execute(const Options& opts, SignalDomain& signals) {
   }
 
   // A stop request (SIGINT, SIGTERM, a closed window) is neither a pass nor a
-  // detection failure; for a live camera it is the normal end.
+  // detection failure.
   const bool stopped = !timed_out && termination == holoscan::RunTermination::kStopped;
   bool passed = !timed_out && session.diagnostics().empty() &&
                 termination == holoscan::RunTermination::kRequestedCompleted;
@@ -517,7 +407,7 @@ int execute(const Options& opts, SignalDomain& signals) {
     passed = passed && report->frames == frames && report->passed();
   }
   std::cout << kAppName << ": verdict=" << (passed ? "PASS" : stopped ? "STOPPED" : "FAIL") << '\n';
-  return passed || (stopped && frames == 0) ? 0 : 1;
+  return passed ? 0 : 1;
 }
 
 }  // namespace
