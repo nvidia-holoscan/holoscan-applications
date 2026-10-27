@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Converts an input image of any supported packing, on the host or the device,
-// into the gray image a backend wants, where it wants it. A gray input already
-// in place is passed through without a copy.
+// Converts an image of any supported packing, on the host or the device, to gray
+// where a backend wants it. A gray image already in place is passed through.
 
 #pragma once
 
@@ -11,8 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
-#include <string_view>
+#include <memory>
 
 #include "detection.hpp"
 
@@ -33,11 +31,6 @@ struct ImageView {
 
 class GrayConverter {
  public:
-  GrayConverter() = default;
-  ~GrayConverter();
-  GrayConverter(const GrayConverter&) = delete;
-  GrayConverter& operator=(const GrayConverter&) = delete;
-
   // `input` as gray in `target`, valid until the next call. Device work is
   // ordered on `stream`; a host result is complete when this returns.
   // @throws std::runtime_error on a CUDA failure.
@@ -45,13 +38,17 @@ class GrayConverter {
                                       cudaStream_t stream);
 
  private:
-  void reserve(int width, int height);
-  void release() noexcept;
+  struct HostFree {
+    void operator()(std::uint8_t* data) const noexcept { cudaFreeHost(data); }
+  };
+  struct DeviceFree {
+    void operator()(std::uint8_t* data) const noexcept { cudaFree(data); }
+  };
 
   int width_{};
   int height_{};
-  std::uint8_t* host_gray_{};    // Pinned, width_ x height_.
-  std::uint8_t* device_gray_{};  // width_ x height_.
+  std::unique_ptr<std::uint8_t, HostFree> host_gray_;      // Pinned, width_ x height_.
+  std::unique_ptr<std::uint8_t, DeviceFree> device_gray_;  // width_ x height_.
 };
 
 }  // namespace tag_detection

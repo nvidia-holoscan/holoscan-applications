@@ -12,6 +12,7 @@ extern "C" {
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,14 +22,10 @@ extern "C" {
 namespace tag_detection {
 namespace {
 
-// The AprilTag 3 library places pixel centers at +0.5; reported coordinates put
-// them at integers.
-constexpr double kPixelCenterShift = 0.5;
-
 class CpuBackend final : public DetectorBackend {
  public:
   CpuBackend(const DetectorOptions& options, int width, int height)
-      : family_(options.family), width_(width), height_(height) {
+      : DetectorBackend(width, height), family_(options.family) {
     detector_.reset(apriltag_detector_create());
     if (!detector_) {
       throw std::runtime_error("apriltag_detector_create failed");
@@ -44,20 +41,15 @@ class CpuBackend final : public DetectorBackend {
     detector_->quad_sigma = 0.0F;
     detector_->refine_edges = options.refine_edges;
     detector_->decode_sharpening = options.decode_sharpening;
-    detector_->nthreads = options.cpu_threads;
     detector_->qtp.min_white_black_diff = options.min_white_black_diff;
   }
 
-  [[nodiscard]] Backend kind() const noexcept override { return Backend::kCpu; }
+  [[nodiscard]] std::string_view name() const noexcept override { return "cpu"; }
   [[nodiscard]] MemoryLocation input_location() const noexcept override {
     return MemoryLocation::kHost;
   }
 
-  [[nodiscard]] std::vector<Detection> detect(const GrayImageView& image, cudaStream_t) override {
-    if (image.location != MemoryLocation::kHost || image.width != width_ ||
-        image.height != height_) {
-      throw std::invalid_argument("CPU backend expects a host image of the configured size");
-    }
+  [[nodiscard]] std::vector<Detection> find(const GrayImageView& image, cudaStream_t) override {
     image_u8_t view{.width = image.width,
                     .height = image.height,
                     .stride = static_cast<int32_t>(image.pitch),
@@ -72,16 +64,8 @@ class CpuBackend final : public DetectorBackend {
     for (int i = 0; i < zarray_size(found.get()); ++i) {
       apriltag_detection_t* det = nullptr;
       zarray_get(found.get(), i, &det);
-      Detection detection;
-      detection.id = det->id;
-      detection.hamming = det->hamming;
-      detection.decision_margin = det->decision_margin;
-      detection.center = {det->c[0] - kPixelCenterShift, det->c[1] - kPixelCenterShift};
-      for (int corner = 0; corner < 4; ++corner) {
-        detection.corners[corner] = {det->p[corner][0] - kPixelCenterShift,
-                                     det->p[corner][1] - kPixelCenterShift};
-      }
-      detections.push_back(detection);
+      detections.push_back(
+          make_detection(det->id, det->hamming, det->decision_margin, det->c, det->p));
     }
     return detections;
   }
@@ -101,8 +85,6 @@ class CpuBackend final : public DetectorBackend {
   // Declared before the detector, which refers to it, so it outlives it.
   TagFamily family_;
   std::unique_ptr<apriltag_detector_t, DetectorDeleter> detector_;
-  int width_;
-  int height_;
 };
 
 }  // namespace

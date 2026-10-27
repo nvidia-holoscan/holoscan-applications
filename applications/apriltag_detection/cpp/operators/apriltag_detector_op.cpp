@@ -114,6 +114,22 @@ schema::TagDetection to_message(const Detection& detection) {
 
 }  // namespace
 
+Detection from_message(const schema::TagDetection& tag) {
+  Detection detection{
+      .id = tag.id(), .hamming = tag.hamming(), .decision_margin = tag.decision_margin()};
+  detection.center = {tag.center().x(), tag.center().y()};
+  for (int c = 0; c < 4; ++c) {
+    detection.corners[c] = {tag.corners()->Get(c)->x(), tag.corners()->Get(c)->y()};
+  }
+  if (tag.has_pose()) {
+    TagPose& pose = detection.pose.emplace();
+    for (int i = 0; i < 9; ++i) pose.rotation[i] = tag.rotation()->Get(i);
+    for (int i = 0; i < 3; ++i) pose.translation[i] = tag.translation()->Get(i);
+    pose.error = tag.pose_error();
+  }
+  return detection;
+}
+
 void validate_config(const AprilTagDetectorConfig& config) {
   validate_options(config.options);
   check_available(config.backend);
@@ -133,14 +149,6 @@ AprilTagDetectorOp::AprilTagDetectorOp(AprilTagDetectorConfig config) : config_(
   validate_config(config_);
 }
 
-AprilTagDetectorOp::~AprilTagDetectorOp() {
-  // stop() normally releases the stream; not when the run never got that far.
-  if (own_stream_ != nullptr) {
-    cudaStreamSynchronize(own_stream_);
-    cudaStreamDestroy(own_stream_);
-  }
-}
-
 void AprilTagDetectorOp::setup(holoscan::OperatorSpec& spec) {
   spec.input(image, "image").queue_depth(2U);
   spec.output(detections, "detections");
@@ -156,11 +164,7 @@ void AprilTagDetectorOp::start() { frames_ = 0; }
 
 void AprilTagDetectorOp::stop() {
   backend_.reset();
-  if (own_stream_ != nullptr) {
-    cudaStreamSynchronize(own_stream_);
-    cudaStreamDestroy(own_stream_);
-    own_stream_ = nullptr;
-  }
+  own_stream_.reset();
 }
 
 holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
@@ -179,19 +183,19 @@ holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
   }
   cudaStream_t stream = context.cuda_stream().get();
   if (stream == nullptr) {
-    // The runtime assigns no stream when nothing on this operator's ports is
-    // in device memory. Use one of our own rather than the legacy default
-    // stream, which would serialize with every other stream in the process.
-    if (own_stream_ == nullptr) {
-      const cudaError_t created = cudaStreamCreateWithFlags(&own_stream_, cudaStreamNonBlocking);
-      if (created != cudaSuccess) {
-        own_stream_ = nullptr;
+    // No device memory on our ports, so no runtime stream: use our own, not the
+    // legacy default stream, which serializes with every other stream.
+    if (!own_stream_) {
+      cudaStream_t created = nullptr;
+      const cudaError_t status = cudaStreamCreateWithFlags(&created, cudaStreamNonBlocking);
+      if (status != cudaSuccess) {
         return holoscan::make_unexpected(holoscan::Error{
             holoscan::ErrorCode::kFailure,
-            std::string("AprilTagDetectorOp: cudaStreamCreate: ") + cudaGetErrorString(created)});
+            std::string("AprilTagDetectorOp: cudaStreamCreate: ") + cudaGetErrorString(status)});
       }
+      own_stream_.reset(created);
     }
-    stream = own_stream_;
+    stream = own_stream_.get();
   }
   // Wait for the producer's writes: on our stream for device memory, on the
   // host otherwise.
@@ -219,21 +223,20 @@ holoscan::expected<void, holoscan::Error> AprilTagDetectorOp::compute(
         detection.pose = estimate_pose(detection, *config_.intrinsics, config_.tag_size);
       }
     }
-  } catch (const std::invalid_argument& error) {
+  } catch (const std::exception& error) {
     // Nothing queued on the stream may still read the image after we return.
     cudaStreamSynchronize(stream);
-    return holoscan::make_unexpected(invalid(error.what()));
-  } catch (const std::exception& error) {
-    cudaStreamSynchronize(stream);
+    const bool bad_input = dynamic_cast<const std::invalid_argument*>(&error) != nullptr;
     return holoscan::make_unexpected(holoscan::Error{
-        holoscan::ErrorCode::kFailure, std::string("AprilTagDetectorOp: ") + error.what()});
+        bad_input ? holoscan::ErrorCode::kInvalidArgument : holoscan::ErrorCode::kFailure,
+        std::string("AprilTagDetectorOp: ") + error.what()});
   }
 
   schema::AprilTagDetectionsT message;
   message.frame = frames_++;
   message.image_width = view->width;
   message.image_height = view->height;
-  message.backend = std::string(backend_->resolved_name());
+  message.backend = std::string(backend_->name());
   message.family = config_.options.family;
   const std::size_t kept = std::min(found.size(), kMaxDetectionsPerFrame);
   message.detections.reserve(kept);

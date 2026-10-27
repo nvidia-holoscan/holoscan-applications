@@ -441,27 +441,19 @@ __global__ void moments_kernel(const std::uint64_t* keys, const std::uint64_t* p
             static_cast<double>((point.x - center.x) * point.gx + (point.y - center.y) * point.gy));
 }
 
-// The moments of a cluster's points first .. last inclusive, wrapping past the
-// end, from the cluster's inclusive prefix sums.
-__device__ LineMoments range_moments(const LineMoments* prefix, int first, int last, int count) {
-  const LineMoments zero{};
-  const LineMoments before = first == 0 ? zero : prefix[first - 1];
-  if (first <= last) {
-    return prefix[last] - before;
-  }
-  return (prefix[count - 1] - before) + prefix[last];
-}
+// A point's cluster, the cluster's first point and size, and the point's index in it.
+struct ClusterPoint {
+  std::uint32_t cluster;
+  int offset;
+  int n;
+  int i;
+};
 
-// The smaller eigenvalue of the weighted covariance: the mean squared distance
-// of the points from their best line.
-__device__ double line_mse(const LineMoments& m) {
-  const double ex = m.mx / m.w;
-  const double ey = m.my / m.w;
-  const double cxx = m.mxx / m.w - ex * ex;
-  const double cxy = m.mxy / m.w - ex * ey;
-  const double cyy = m.myy / m.w - ey * ey;
-  const double spread = sqrt(0.25 * (cxx - cyy) * (cxx - cyy) + cxy * cxy);
-  return fmax(0.0, 0.5 * (cxx + cyy) - spread);
+__device__ ClusterPoint locate(std::uint32_t index, const std::uint32_t* cluster_of,
+                               const std::uint32_t* offsets, const std::uint32_t* counts) {
+  const std::uint32_t cluster = cluster_of[index];
+  const int offset = static_cast<int>(offsets[cluster]);
+  return {cluster, offset, static_cast<int>(counts[cluster]), static_cast<int>(index) - offset};
 }
 
 // How badly a line fits each point's neighborhood: high at corners.
@@ -472,17 +464,18 @@ __global__ void window_error_kernel(const LineMoments* prefix, const std::uint32
   if (index >= totals->unique) {
     return;
   }
-  const std::uint32_t cluster = cluster_of[index];
-  const int offset = static_cast<int>(offsets[cluster]);
-  const int n = static_cast<int>(counts[cluster]);
+  const auto [cluster, offset, n, i] = locate(index, cluster_of, offsets, counts);
   const int window = min(20, n / 12);
   if (window < 2) {
     error[index] = 0.0;
     return;
   }
-  const int i = static_cast<int>(index) - offset;
-  const LineMoments m = range_moments(prefix + offset, (i + n - window) % n, (i + window) % n, n);
-  error[index] = (2 * window + 1) * line_mse(m);
+  const LineMoments* mine = prefix + offset;
+  const int first = (i + n - window) % n;
+  const int last = (i + window) % n;
+  const LineMoments m = range_moments(first == 0 ? LineMoments{} : mine[first - 1], mine[last],
+                                      mine[n - 1], first > last);
+  error[index] = (2 * window + 1) * Covariance(m).smallest();
 }
 
 __global__ void smooth_kernel(const double* error, const std::uint32_t* cluster_of,
@@ -492,10 +485,7 @@ __global__ void smooth_kernel(const double* error, const std::uint32_t* cluster_
   if (index >= totals->unique) {
     return;
   }
-  const std::uint32_t cluster = cluster_of[index];
-  const int offset = static_cast<int>(offsets[cluster]);
-  const int n = static_cast<int>(counts[cluster]);
-  const int i = static_cast<int>(index) - offset;
+  const auto [cluster, offset, n, i] = locate(index, cluster_of, offsets, counts);
   // AprilTag 3's unit-sigma Gaussian, seven taps, unnormalized.
   double sum = 0.0;
   for (int k = -3; k <= 3; ++k) {
@@ -519,11 +509,8 @@ __global__ void maxima_kernel(const double* smoothed, const std::uint32_t* clust
     is_maximum[index] = 0U;
     return;
   }
-  const std::uint32_t cluster = cluster_of[index];
-  const int offset = static_cast<int>(offsets[cluster]);
-  const int n = static_cast<int>(counts[cluster]);
+  const auto [cluster, offset, n, i] = locate(index, cluster_of, offsets, counts);
   const std::uint32_t raw = raw_counts[cluster];
-  const int i = static_cast<int>(index) - offset;
   const double here = smoothed[index];
   const bool maximum = raw >= kMinClusterPoints && raw <= max_raw_points && n / 12 >= 2 &&
                        here > smoothed[offset + (i + n - 1) % n] &&
@@ -543,84 +530,53 @@ struct AddMoments {
 }  // namespace
 
 struct GpuSegmenter::Buffers {
-  Buffers(std::size_t pixels, std::size_t tiles, std::size_t capacity)
-      : decimated(pixels),
-        tile_min(tiles),
-        tile_max(tiles),
-        tile_min_dilated(tiles),
-        tile_max_dilated(tiles),
-        threshold(pixels),
-        labels(pixels),
-        sizes(pixels),
-        keys(capacity),
-        sorted_keys(capacity),
-        points(capacity),
-        sorted_points(capacity),
-        point_cluster(capacity),
-        keep(capacity),
-        unique_index(capacity),
-        cluster_of(capacity),
-        moments(capacity),
-        prefix(capacity),
-        error(capacity),
-        smoothed(capacity),
-        is_maximum(capacity),
-        maxima(capacity),
-        run_keys(capacity),
-        run_counts(capacity),
-        run_offsets(capacity),
-        unique_counts(capacity),
-        unique_offsets(capacity),
-        maxima_counts(capacity),
-        maxima_offsets(capacity),
-        polarity(capacity),
-        box(4 * capacity),
-        counts(1) {}
+  Buffers(std::size_t pixel_count, std::size_t tile_count, std::size_t point_capacity)
+      : pixels(pixel_count), tiles(tile_count), capacity(point_capacity) {}
 
+  std::size_t pixels;
+  std::size_t tiles;
+  std::size_t capacity;
   // Per decimated pixel or tile.
-  DeviceBuffer<std::uint8_t> decimated;
-  DeviceBuffer<std::uint8_t> tile_min;
-  DeviceBuffer<std::uint8_t> tile_max;
-  DeviceBuffer<std::uint8_t> tile_min_dilated;
-  DeviceBuffer<std::uint8_t> tile_max_dilated;
-  DeviceBuffer<std::uint8_t> threshold;
-  DeviceBuffer<std::int32_t> labels;
-  DeviceBuffer<std::uint32_t> sizes;
+  DeviceBuffer<std::uint8_t> decimated{pixels};
+  DeviceBuffer<std::uint8_t> tile_min{tiles};
+  DeviceBuffer<std::uint8_t> tile_max{tiles};
+  DeviceBuffer<std::uint8_t> tile_min_dilated{tiles};
+  DeviceBuffer<std::uint8_t> tile_max_dilated{tiles};
+  DeviceBuffer<std::uint8_t> threshold{pixels};
+  DeviceBuffer<std::int32_t> labels{pixels};
+  DeviceBuffer<std::uint32_t> sizes{pixels};
   // Per boundary point.
-  DeviceBuffer<std::uint64_t> keys;
-  DeviceBuffer<std::uint64_t> sorted_keys;
-  DeviceBuffer<std::uint64_t> points;
-  DeviceBuffer<std::uint64_t> sorted_points;
-  DeviceBuffer<std::uint32_t> point_cluster;
-  DeviceBuffer<std::uint8_t> keep;
-  DeviceBuffer<std::uint32_t> unique_index;
-  DeviceBuffer<std::uint32_t> cluster_of;
-  DeviceBuffer<LineMoments> moments;
-  DeviceBuffer<LineMoments> prefix;
-  DeviceBuffer<double> error;
-  DeviceBuffer<double> smoothed;
-  DeviceBuffer<std::uint8_t> is_maximum;
-  DeviceBuffer<std::uint32_t> maxima;
+  DeviceBuffer<std::uint64_t> keys{capacity};
+  DeviceBuffer<std::uint64_t> sorted_keys{capacity};
+  DeviceBuffer<std::uint64_t> points{capacity};
+  DeviceBuffer<std::uint64_t> sorted_points{capacity};
+  DeviceBuffer<std::uint32_t> point_cluster{capacity};
+  DeviceBuffer<std::uint8_t> keep{capacity};
+  DeviceBuffer<std::uint32_t> unique_index{capacity};
+  DeviceBuffer<std::uint32_t> cluster_of{capacity};
+  DeviceBuffer<LineMoments> moments{capacity};
+  DeviceBuffer<LineMoments> prefix{capacity};
+  DeviceBuffer<double> error{capacity};
+  DeviceBuffer<double> smoothed{capacity};
+  DeviceBuffer<std::uint8_t> is_maximum{capacity};
+  DeviceBuffer<std::uint32_t> maxima{capacity};
   // Per cluster.
-  DeviceBuffer<std::uint64_t> run_keys;
-  DeviceBuffer<std::uint32_t> run_counts;
-  DeviceBuffer<std::uint32_t> run_offsets;
-  DeviceBuffer<std::uint32_t> unique_counts;
-  DeviceBuffer<std::uint32_t> unique_offsets;
-  DeviceBuffer<std::uint32_t> maxima_counts;
-  DeviceBuffer<std::uint32_t> maxima_offsets;
-  DeviceBuffer<double> polarity;
-  DeviceBuffer<std::int32_t> box;
-  DeviceBuffer<SegmentCounts> counts;
+  DeviceBuffer<std::uint64_t> run_keys{capacity};
+  DeviceBuffer<std::uint32_t> run_counts{capacity};
+  DeviceBuffer<std::uint32_t> run_offsets{capacity};
+  DeviceBuffer<std::uint32_t> unique_counts{capacity};
+  DeviceBuffer<std::uint32_t> unique_offsets{capacity};
+  DeviceBuffer<std::uint32_t> maxima_counts{capacity};
+  DeviceBuffer<std::uint32_t> maxima_offsets{capacity};
+  DeviceBuffer<double> polarity{capacity};
+  DeviceBuffer<std::int32_t> box{4 * capacity};
+  DeviceBuffer<SegmentCounts> counts{1};
   std::unique_ptr<DeviceBuffer<std::uint8_t>> scratch;
   std::size_t scratch_bytes{};
 };
 
 GpuSegmenter::GpuSegmenter(int width, int height, int decimate, int min_white_black_diff)
-    : width_(width),
-      height_(height),
-      decimate_(decimate),
-      min_white_black_diff_(min_white_black_diff) {
+    : decimate_(decimate), min_white_black_diff_(min_white_black_diff) {
   if (decimate < 1 || width / decimate < 2 * kTileSize || height / decimate < 2 * kTileSize) {
     throw std::invalid_argument("CUDA backend: the decimated image is too small");
   }
@@ -718,10 +674,6 @@ ClusterData GpuSegmenter::data() const noexcept {
 }
 
 void GpuSegmenter::segment(const GrayImageView& image, cudaStream_t stream) {
-  if (image.location != MemoryLocation::kDevice || image.width != width_ ||
-      image.height != height_) {
-    throw std::invalid_argument("CUDA backend expects a device image of the configured size");
-  }
   Buffers& b = *buffers_;
   const std::size_t pixels = static_cast<std::size_t>(dec_width_) * dec_height_;
   const std::size_t tiles = static_cast<std::size_t>(tiles_x_) * tiles_y_;

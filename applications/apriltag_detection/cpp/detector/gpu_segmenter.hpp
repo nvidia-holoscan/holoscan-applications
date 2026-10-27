@@ -1,14 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The first half of the CUDA backend. It decimates the image, thresholds it
-// adaptively, labels connected components, and gathers the boundary points
-// between each pair of adjacent black and white components (a cluster, a
-// candidate tag border). It orders each cluster's points by angle, accumulates
-// their line-fit moments, and scores how badly a line fits around each point;
-// the local maxima of that score are the cluster's corner candidates.
-//
-// Every buffer has a fixed capacity and every count stays on the device, so a
+// The first half of the CUDA backend: threshold, connected components, boundary
+// points per black/white component pair (a cluster), angular order, line-fit
+// moments and corner candidates. Fixed capacities and device-side counts, so a
 // frame needs no host synchronization.
 
 #pragma once
@@ -62,6 +57,32 @@ struct LineMoments {
   }
 };
 
+#if defined(__CUDACC__)
+// The moments of a cluster's points first .. last inclusive, wrapping past its
+// end when first > last: `before` sums the points before first, `through` those
+// up to last, `total` all of them. Each .cu keeps its own FMA setting.
+__device__ inline LineMoments range_moments(const LineMoments& before, const LineMoments& through,
+                                            const LineMoments& total, bool wraps) {
+  return wraps ? (total - before) + through : through - before;
+}
+
+// The points' weighted covariance; its eigenvalues are half_trace -/+ spread.
+struct Covariance {
+  double ex, ey, cxx, cxy, cyy, half_trace, spread;
+
+  __device__ explicit Covariance(const LineMoments& m)
+      : ex(m.mx / m.w),
+        ey(m.my / m.w),
+        cxx(m.mxx / m.w - ex * ex),
+        cxy(m.mxy / m.w - ex * ey),
+        cyy(m.myy / m.w - ey * ey),
+        half_trace(0.5 * (cxx + cyy)),
+        spread(sqrt(0.25 * (cxx - cyy) * (cxx - cyy) + cxy * cxy)) {}
+  // The mean squared distance of the points from their best line.
+  [[nodiscard]] __device__ double smallest() const { return fmax(0.0, half_trace - spread); }
+};
+#endif
+
 // Counts the segmenter leaves on the device for each frame.
 struct SegmentCounts {
   std::uint32_t points;  // Boundary points found; those past the capacity are dropped.
@@ -70,10 +91,9 @@ struct SegmentCounts {
   std::uint32_t maxima;  // Corner candidates over all clusters.
 };
 
-// The segmenter's results, in device memory, for cluster c < clusters():
-// its points offsets[c] .. offsets[c] + point_counts[c] - 1 in angular order, and its
-// corner candidates maxima[maxima_offsets[c]] .. + maxima_counts[c] - 1 (point
-// indices, in order).
+// The segmenter's device results. Cluster c < clusters() has points offsets[c] ..
+// + point_counts[c] - 1 in angular order and corner candidates (point indices)
+// maxima[maxima_offsets[c]] .. + maxima_counts[c] - 1.
 struct ClusterData {
   const SegmentCounts* counts;
   std::uint32_t capacity;
@@ -81,9 +101,7 @@ struct ClusterData {
   const std::uint32_t* offsets;
   const std::uint32_t* point_counts;
   const std::int32_t* box;  // Per cluster in doubled decimated pixels: x min, x max, y min, y max.
-  // Sum over the points of (point - center) . gradient: positive when the
-  // inside of the cluster is darker than its outside.
-  const double* polarity;
+  const double* polarity;   // Sum of (point - center) . gradient: > 0 for a dark inside.
   const LineMoments* prefix;  // Inclusive per-cluster prefix sums of the points' moments.
   const double* smoothed;     // The smoothed line-fit error at each point.
   const std::uint32_t* maxima;
@@ -108,8 +126,8 @@ class GpuSegmenter {
   GpuSegmenter(const GpuSegmenter&) = delete;
   GpuSegmenter& operator=(const GpuSegmenter&) = delete;
 
-  // Enqueues the segmentation of `image` (device memory, the configured size)
-  // on `stream`; the results are in data() once it has run.
+  // Enqueues the segmentation of `image` (device memory, the configured size,
+  // checked by DetectorBackend::detect) on `stream`; results are in data().
   // @throws std::runtime_error on a CUDA failure.
   void segment(const GrayImageView& image, cudaStream_t stream);
 
@@ -127,8 +145,6 @@ class GpuSegmenter {
   // sizes its scratch.
   void run_cub(int stage, void* temp, std::size_t& bytes, cudaStream_t stream);
 
-  int width_;
-  int height_;
   int decimate_;
   int min_white_black_diff_;
   int dec_width_;

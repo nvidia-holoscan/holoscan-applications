@@ -1,16 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The CUDA backend, entirely on the GPU: the segmenter (gpu_segmenter.hpp)
-// finds each cluster's corner candidates; here one thread per cluster fits a
-// quad, one thread per quad refines its edges on the full-resolution image and
-// decodes it, and one thread drops duplicate detections. The only copy to the
-// host is the final detections.
-//
-// This file is compiled without FMA contraction (see CMakeLists.txt), so its
-// double arithmetic rounds exactly as the AprilTag 3 method does on a CPU.
-// Coordinates follow AprilTag 3, pixel centers at +0.5, until the results are
-// reported.
+// The CUDA backend's second half: fit quads to the segmenter's corner
+// candidates, refine and decode them, drop duplicates; one copy to the host.
+// Compiled without FMA contraction so it rounds as AprilTag 3 does on a CPU.
+// Pixel centers are at +0.5, as in AprilTag 3, until results are reported.
 
 #include <apriltag.h>
 
@@ -24,6 +18,10 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+// CCCL's headers are C++; cpplint takes any angle-bracketed non-.hpp header for
+// a C system header.
+#include <cub/warp/warp_reduce.cuh>  // NOLINT(build/include_order)
 
 #include "detector_backend.hpp"
 #include "gpu_segmenter.hpp"
@@ -51,11 +49,6 @@ constexpr std::uint32_t kMaxJobs = 4096;
 // Most samples taken along one edge when refining it: enough for 8192 pixels.
 constexpr int kMaxEdgeSamples = 1024;
 constexpr int kBlock = 128;
-
-// Weighted line-fit sums with `n` the point count.
-struct Moments {
-  double mx{}, my{}, mxx{}, mxy{}, myy{}, w{}, n{};
-};
 
 struct Line {
   double point[2];      // The weighted centroid of its samples.
@@ -154,36 +147,25 @@ __host__ __device__ std::uint64_t mix(std::uint64_t code) {
   return code;
 }
 
-__device__ Moments moments_of(const LineMoments& m, double count) {
-  return {m.mx, m.my, m.mxx, m.mxy, m.myy, m.w, count};
-}
-
-// The best line through `m`'s points. The direction is the covariance's major
-// eigenvector, computed only when the fit is within `max_mse`.
-__device__ Line fit_line(const Moments& m, double max_mse = HUGE_VAL) {
+// The best line through `m`'s `n` points. The direction is the covariance's
+// major eigenvector, computed only when the fit is within `max_mse`.
+__device__ Line fit_line(const LineMoments& m, double n, double max_mse = HUGE_VAL) {
   Line line{};
-  const double ex = m.mx / m.w;
-  const double ey = m.my / m.w;
-  const double cxx = m.mxx / m.w - ex * ex;
-  const double cxy = m.mxy / m.w - ex * ey;
-  const double cyy = m.myy / m.w - ey * ey;
-  const double half_trace = 0.5 * (cxx + cyy);
-  const double spread = sqrt(0.25 * (cxx - cyy) * (cxx - cyy) + cxy * cxy);
-  const double smallest = fmax(0.0, half_trace - spread);
-  line.point[0] = ex;
-  line.point[1] = ey;
+  const Covariance c(m);
+  const double smallest = c.smallest();
+  line.point[0] = c.ex;
+  line.point[1] = c.ey;
   line.mse = smallest;
-  line.error = smallest * m.n;
+  line.error = smallest * n;
   if (smallest > max_mse) {
     return line;
   }
-  // (cxy, largest - cxx) and (largest - cyy, cxy) both lie along the major
-  // axis; the longer is the better conditioned.
-  const double largest = half_trace + spread;
-  const double ax = cxy;
-  const double ay = largest - cxx;
-  const double bx = largest - cyy;
-  const double by = cxy;
+  // Both vectors lie along the major axis; the longer is better conditioned.
+  const double largest = c.half_trace + c.spread;
+  const double ax = c.cxy;
+  const double ay = largest - c.cxx;
+  const double bx = largest - c.cyy;
+  const double by = c.cxy;
   const double la = ax * ax + ay * ay;
   const double lb = bx * bx + by * by;
   if (la == 0.0 && lb == 0.0) {
@@ -245,17 +227,6 @@ struct Candidate {
   LineMoments before;   // Moments of the cluster's points 0 .. index - 1.
 };
 
-// The moments of the points from candidate `from` to candidate `to`, both
-// included, wrapping past the cluster's end.
-__device__ Moments segment(const LineMoments& total, std::uint32_t points, const Candidate& from,
-                           const Candidate& to) {
-  if (from.index <= to.index) {
-    return moments_of(to.through - from.before, to.index - from.index + 1.0);
-  }
-  return moments_of((total - from.before) + to.through,
-                    static_cast<double>(points) - from.index + to.index + 1.0);
-}
-
 // A cluster worth fitting: its corner candidates, in index order.
 struct FitJob {
   std::uint32_t cluster;
@@ -265,6 +236,16 @@ struct FitJob {
   LineMoments total;
   Candidate candidate[kMaxCornerCandidates];
 };
+
+// The line through the points from candidate `from` to `to`, both included,
+// wrapping past the cluster's end.
+__device__ Line fit_between(const FitJob& job, const Candidate& from, const Candidate& to,
+                            double max_mse = HUGE_VAL) {
+  const bool wraps = from.index > to.index;
+  const double n = wraps ? static_cast<double>(job.points) - from.index + to.index + 1.0
+                         : to.index - from.index + 1.0;
+  return fit_line(range_moments(from.before, to.through, job.total, wraps), n, max_mse);
+}
 
 // One thread per cluster: its strongest corner candidates (all of them when
 // there are at most kMaxCornerCandidates, otherwise those stronger than the
@@ -365,26 +346,24 @@ __global__ void fit_quads_kernel(const FitJob* jobs, const std::uint32_t* job_co
   const FitJob& job = jobs[index];
   const int kept = job.candidates;
   const Candidate* candidates = job.candidate;
-  const std::uint32_t n = job.points;
   double best_error = HUGE_VAL;
   int best_rank = INT_MAX;  // a, b, c, d as decimal digits: the search order.
   int pair = 0;
   for (int a = 0; a + 3 < kept; ++a) {
     for (int b = a + 1; b + 2 < kept; ++b, ++pair) {
       if (pair % 32 != lane) continue;
-      const Line l0 = fit_line(segment(job.total, n, candidates[a], candidates[b]), kMaxLineFitMse);
+      const Line l0 = fit_between(job, candidates[a], candidates[b], kMaxLineFitMse);
       if (l0.mse > kMaxLineFitMse) continue;
       for (int c = b + 1; c + 1 < kept; ++c) {
-        const Line l1 =
-            fit_line(segment(job.total, n, candidates[b], candidates[c]), kMaxLineFitMse);
+        const Line l1 = fit_between(job, candidates[b], candidates[c], kMaxLineFitMse);
         if (l1.mse > kMaxLineFitMse) continue;
         const double dot01 = l0.direction[0] * l1.direction[0] + l0.direction[1] * l1.direction[1];
         if (fabs(dot01) > kMaxEdgeCos) continue;
         for (int d = c + 1; d < kept; ++d) {
           // Only the error counts here; the direction is not needed.
-          const Line l2 = fit_line(segment(job.total, n, candidates[c], candidates[d]), 0.0);
+          const Line l2 = fit_between(job, candidates[c], candidates[d], 0.0);
           if (l2.mse > kMaxLineFitMse) continue;
-          const Line l3 = fit_line(segment(job.total, n, candidates[d], candidates[a]), 0.0);
+          const Line l3 = fit_between(job, candidates[d], candidates[a], 0.0);
           if (l3.mse > kMaxLineFitMse) continue;
           const double sum = l0.error + l1.error + l2.error + l3.error;
           if (sum < best_error) {
@@ -395,21 +374,25 @@ __global__ void fit_quads_kernel(const FitJob* jobs, const std::uint32_t* job_co
       }
     }
   }
-  for (int shift = 16; shift > 0; shift /= 2) {
-    const double other_error = __shfl_down_sync(0xffffffffU, best_error, shift);
-    const int other_rank = __shfl_down_sync(0xffffffffU, best_rank, shift);
-    if (other_error < best_error || (other_error == best_error && other_rank < best_rank)) {
-      best_error = other_error;
-      best_rank = other_rank;
-    }
-  }
-  if (lane != 0 || best_error == HUGE_VAL) {
+  // The warp's lowest (error, rank): a total order, so any reduction order agrees.
+  struct Best {
+    double error;
+    int rank;
+  };
+  __shared__ cub::WarpReduce<Best>::TempStorage reduce_storage;
+  const Best found =
+      cub::WarpReduce<Best>(reduce_storage)
+          .Reduce(Best{best_error, best_rank}, [](const Best& a, const Best& b) {
+            return b.error < a.error || (b.error == a.error && b.rank < a.rank) ? b : a;
+          });
+  if (lane != 0 || found.error == HUGE_VAL) {
     return;
   }
-  const int best[4] = {best_rank / 1000, best_rank / 100 % 10, best_rank / 10 % 10, best_rank % 10};
+  const int r = found.rank;
+  const int best[4] = {r / 1000, r / 100 % 10, r / 10 % 10, r % 10};
   Line lines[4];
   for (int i = 0; i < 4; ++i) {
-    lines[i] = fit_line(segment(job.total, n, candidates[best[i]], candidates[best[(i + 1) % 4]]));
+    lines[i] = fit_between(job, candidates[best[i]], candidates[best[(i + 1) % 4]]);
   }
   double corners[4][2];
   for (int i = 0; i < 4; ++i) {
@@ -501,7 +484,7 @@ __device__ void refine_edges(Quad& quad, const DeviceGray& image, int decimate) 
     }
     __syncthreads();
     if (threadIdx.x == 0) {
-      Moments fit{};
+      LineMoments fit{};
       for (int s = 0; s < samples; ++s) {
         if (!sample_ok[s]) continue;
         const double x = sample_x[s];
@@ -512,12 +495,11 @@ __device__ void refine_edges(Quad& quad, const DeviceGray& image, int decimate) 
         fit.mxy += x * y;
         fit.myy += y * y;
         fit.w += 1.0;
-        fit.n += 1.0;
       }
-      if (fit.n < 2) {
+      if (fit.w < 2) {
         usable = false;  // Leave the quad as fitted.
       } else {
-        lines[edge] = fit_line(fit);
+        lines[edge] = fit_line(fit, fit.w);
       }
     }
   }
@@ -563,29 +545,11 @@ struct GrayModel {
       }
       m[i][3] = rhs[i];
     }
-    for (int col = 0; col < 3; ++col) {
-      int pivot = col;
-      for (int row = col + 1; row < 3; ++row) {
-        if (fabs(m[row][col]) > fabs(m[pivot][col])) pivot = row;
-      }
-      if (fabs(m[pivot][col]) < 1e-9) {
-        coefficients[0] = 0.0;
-        coefficients[1] = 0.0;
-        coefficients[2] = normal[2][2] > 0.0 ? rhs[2] / normal[2][2] : 0.0;
-        return;
-      }
-      for (int k = 0; k < 4; ++k) {
-        const double swap = m[col][k];
-        m[col][k] = m[pivot][k];
-        m[pivot][k] = swap;
-      }
-      for (int row = 0; row < 3; ++row) {
-        if (row == col) continue;
-        const double factor = m[row][col] / m[col][col];
-        for (int k = col; k < 4; ++k) m[row][k] -= factor * m[col][k];
-      }
+    if (!tag_detection::solve(m, 1e-9, coefficients)) {
+      coefficients[0] = 0.0;
+      coefficients[1] = 0.0;
+      coefficients[2] = normal[2][2] > 0.0 ? rhs[2] / normal[2][2] : 0.0;
     }
-    for (int i = 0; i < 3; ++i) coefficients[i] = m[i][3] / m[i][i];
   }
 
   [[nodiscard]] __device__ double at(double x, double y) const {
@@ -731,9 +695,8 @@ __device__ bool decode(const Quad& quad, const DeviceGray& image, const FamilyPa
       out.hamming = entry->hamming;
       out.margin = static_cast<float>(margin);
       out.cluster = quad.cluster;
-      constexpr double kIdeal[4][2] = {{-1.0, 1.0}, {1.0, 1.0}, {1.0, -1.0}, {-1.0, -1.0}};
       for (int i = 0; i < 4; ++i) {
-        project(h, kIdeal[i][0], kIdeal[i][1], out.corners[i]);
+        project(h, ideal_x(i), ideal_y(i), out.corners[i]);
       }
       project(h, 0.0, 0.0, out.center);
       return true;
@@ -779,9 +742,8 @@ __device__ bool ranks_before(const DecodedTag& a, const DecodedTag& b) {
   return a.cluster < b.cluster;
 }
 
-// One thread. Several quads can frame one tag (its outer and inner border
-// edges, both polarities); keeps the best decode of each, in rank order, and
-// moves pixel centers to integer coordinates.
+// One thread. Several quads can frame one tag (outer and inner border edges,
+// both polarities); keeps the best decode of each, in rank order.
 __global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* quad_count,
                               const SegmentCounts* counts, FrameResult* result) {
   const std::uint32_t quads = min(*quad_count, kMaxQuads);
@@ -813,14 +775,7 @@ __global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* qu
     }
   }
   for (std::uint32_t k = 0; k < count && k < kMaxResults; ++k) {
-    DecodedTag tag = decoded[kept[k]];
-    tag.center[0] -= 0.5;
-    tag.center[1] -= 0.5;
-    for (auto& corner : tag.corners) {
-      corner[0] -= 0.5;
-      corner[1] -= 0.5;
-    }
-    result->tags[k] = tag;
+    result->tags[k] = decoded[kept[k]];
   }
   result->count = count;
   result->quads = *quad_count;
@@ -830,14 +785,13 @@ __global__ void select_kernel(const DecodedTag* decoded, const std::uint32_t* qu
 class CudaBackend final : public DetectorBackend {
  public:
   CudaBackend(const DetectorOptions& options, int width, int height)
-      : segmenter_(width, height, options.decimate, options.min_white_black_diff),
+      : DetectorBackend(width, height),
+        segmenter_(width, height, options.decimate, options.min_white_black_diff),
         jobs_(kMaxJobs),
         quads_(kMaxQuads),
         quad_count_(2),
         decoded_(kMaxQuads),
-        result_(1),
-        width_(width),
-        height_(height) {
+        result_(1) {
     const TagFamily tags(options.family);
     const apriltag_family_t* f = tags.get();
     if (static_cast<int>(f->nbits) > kMaxBits || f->total_width > kMaxGrid) {
@@ -870,7 +824,8 @@ class CudaBackend final : public DetectorBackend {
         throw std::runtime_error("tag family layout is not symmetric under rotation");
       }
     }
-    upload_decode_table(*f, options.max_hamming);
+    upload_decode_table(*f, decode_table_entries(options.family, options.max_hamming),
+                        options.max_hamming);
 
     fit_.normal_border = !f->reversed_border;
     fit_.reversed_border = f->reversed_border;
@@ -883,13 +838,13 @@ class CudaBackend final : public DetectorBackend {
     host_result_.reset(static_cast<FrameResult*>(pinned));
   }
 
-  [[nodiscard]] Backend kind() const noexcept override { return Backend::kCuda; }
+  [[nodiscard]] std::string_view name() const noexcept override { return "cuda"; }
   [[nodiscard]] MemoryLocation input_location() const noexcept override {
     return MemoryLocation::kDevice;
   }
 
-  [[nodiscard]] std::vector<Detection> detect(const GrayImageView& image,
-                                              cudaStream_t stream) override {
+  [[nodiscard]] std::vector<Detection> find(const GrayImageView& image,
+                                            cudaStream_t stream) override {
     segmenter_.segment(image, stream);
     cuda_check(cudaMemsetAsync(quad_count_.get(), 0, 2 * sizeof(std::uint32_t), stream),
                "cudaMemsetAsync");
@@ -912,17 +867,11 @@ class CudaBackend final : public DetectorBackend {
 
     const FrameResult& result = *host_result_;
     warn_once(result);
-    std::vector<Detection> detections(std::min(result.count, kMaxResults));
-    for (std::size_t i = 0; i < detections.size(); ++i) {
+    std::vector<Detection> detections;
+    for (std::uint32_t i = 0; i < std::min(result.count, kMaxResults); ++i) {
       const DecodedTag& tag = result.tags[i];
-      Detection& detection = detections[i];
-      detection.id = tag.id;
-      detection.hamming = tag.hamming;
-      detection.decision_margin = tag.margin;
-      detection.center = {tag.center[0], tag.center[1]};
-      for (int c = 0; c < 4; ++c) {
-        detection.corners[c] = {tag.corners[c][0], tag.corners[c][1]};
-      }
+      detections.push_back(
+          make_detection(tag.id, tag.hamming, tag.margin, tag.center, tag.corners));
     }
     return detections;
   }
@@ -932,13 +881,9 @@ class CudaBackend final : public DetectorBackend {
     void operator()(FrameResult* result) const noexcept { cudaFreeHost(result); }
   };
 
-  // The family's codes, and every variant within `max_hamming` bits, in an
+  // The family's `entries` codes and variants within `max_hamming` bits, in an
   // open-addressed hash table on the device.
-  void upload_decode_table(const apriltag_family_t& f, int max_hamming) {
-    std::size_t entries = f.ncodes;
-    if (max_hamming >= 1) entries += static_cast<std::size_t>(f.ncodes) * f.nbits;
-    if (max_hamming >= 2)
-      entries += static_cast<std::size_t>(f.ncodes) * f.nbits * (f.nbits - 1) / 2;
+  void upload_decode_table(const apriltag_family_t& f, std::uint64_t entries, int max_hamming) {
     std::vector<TableEntry> table(std::bit_ceil(entries * 2), TableEntry{0, -1, 0});
     const std::uint64_t mask = table.size() - 1;
     const auto insert = [&](std::uint64_t code, int id, int hamming) {
@@ -999,8 +944,6 @@ class CudaBackend final : public DetectorBackend {
   std::unique_ptr<FrameResult, HostFree> host_result_;
   FamilyParams family_{};
   FitParams fit_{};
-  int width_;
-  int height_;
   bool warned_{};
 };
 

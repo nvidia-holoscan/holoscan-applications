@@ -26,21 +26,16 @@ extern "C" {
 #include <vector>
 
 #include "detector_backend.hpp"
-#include "tag_family.hpp"
 
 namespace tag_detection {
 namespace {
 
-// VPI places pixel centers at +0.5, like the AprilTag 3 library; reported
-// coordinates put them at integers.
-constexpr double kPixelCenterShift = 0.5;
-// The image sides the PVA detector accepts, as measured with VPI 4 on Jetson
-// Thor: below 256 it refuses the payload, above 4096 the launch, and a side one
-// pixel past a multiple of 128 builds but fails every detect.
+// Image sides the PVA detector accepts, measured with VPI 4 on Jetson Thor: others
+// fail to create or launch, or (one past a multiple of 128) fail every detect.
 constexpr bool pva_side_usable(int side) noexcept {
   return side >= 256 && side <= 4096 && side % 128 != 1;
 }
-// Results the detector can return per frame. VPI writes no more than this.
+// Results the detector can return per frame.
 constexpr std::int32_t kMaxDetections = 256;
 
 void check(VPIStatus status, std::string_view what) {
@@ -72,21 +67,22 @@ VPIAprilTagFamily vpi_family(std::string_view name) {
   throw std::invalid_argument("VPI does not support AprilTag family '" + std::string(name) + "'");
 }
 
+// Whether VPI reports a PVA on this platform.
+bool platform_has_pva() {
+  VPIContext context = nullptr;
+  check(vpiContextGetCurrent(&context), "vpiContextGetCurrent");
+  std::uint64_t flags = 0;
+  check(vpiContextGetFlags(context, &flags), "vpiContextGetFlags");
+  return (flags & VPI_BACKEND_PVA) != 0U;
+}
+
 class VpiBackend final : public DetectorBackend {
  public:
-  VpiBackend(Backend requested, const DetectorOptions& options, int width, int height)
-      : requested_(requested), width_(width), height_(height) {
-    hardware_ = resolve_hardware(requested);
-    const bool pva_fits = pva_side_usable(width) && pva_side_usable(height);
-    if (hardware_ == VPI_BACKEND_PVA && !pva_fits) {
-      if (requested == Backend::kVpiPva) {
-        throw std::invalid_argument(
-            "the PVA AprilTag detector needs each image side in [256, 4096] and not one past a "
-            "multiple of 128; got " +
-            std::to_string(width) + "x" + std::to_string(height));
-      }
-      // `vpi` takes the PVA only where it can.
-      hardware_ = VPI_BACKEND_CPU;
+  VpiBackend(const DetectorOptions& options, int width, int height)
+      : DetectorBackend(width, height) {
+    // The PVA where there is one and the image suits it, else VPI's CPU detector.
+    if (platform_has_pva() && pva_side_usable(width) && pva_side_usable(height)) {
+      hardware_ = VPI_BACKEND_PVA;
     }
     VPIAprilTagDecodeParams params{};
     check(vpiInitAprilTagDecodeParams(&params), "vpiInitAprilTagDecodeParams");
@@ -113,8 +109,7 @@ class VpiBackend final : public DetectorBackend {
 
   ~VpiBackend() override { release(); }
 
-  [[nodiscard]] Backend kind() const noexcept override { return requested_; }
-  [[nodiscard]] std::string_view resolved_name() const noexcept override {
+  [[nodiscard]] std::string_view name() const noexcept override {
     return hardware_ == VPI_BACKEND_PVA ? "vpi-pva" : "vpi-cpu";
   }
   [[nodiscard]] MemoryLocation input_location() const noexcept override {
@@ -122,11 +117,8 @@ class VpiBackend final : public DetectorBackend {
     return hardware_ == VPI_BACKEND_PVA ? MemoryLocation::kDevice : MemoryLocation::kHost;
   }
 
-  [[nodiscard]] std::vector<Detection> detect(const GrayImageView& image,
-                                              cudaStream_t stream) override {
-    if (image.location != input_location() || image.width != width_ || image.height != height_) {
-      throw std::invalid_argument("VPI backend received an image of another size or location");
-    }
+  [[nodiscard]] std::vector<Detection> find(const GrayImageView& image,
+                                            cudaStream_t stream) override {
     upload(image, stream);
     check(
         vpiSubmitAprilTagDetector(stream_, hardware_, payload_, kMaxDetections, gray_, detections_),
@@ -148,39 +140,19 @@ class VpiBackend final : public DetectorBackend {
     for (std::size_t i = 0; i < count; ++i) {
       const auto* element = reinterpret_cast<const VPIAprilTagDetection*>(
           base + i * static_cast<std::size_t>(data.buffer.aos.strideBytes));
-      Detection detection;
-      detection.id = element->id;
-      detection.hamming = element->correctedBits;
-      detection.decision_margin = element->decisionMargin;
-      detection.center = {element->center.x - kPixelCenterShift,
-                          element->center.y - kPixelCenterShift};
-      for (int corner = 0; corner < 4; ++corner) {
-        detection.corners[corner] = {element->corners[corner].x - kPixelCenterShift,
-                                     element->corners[corner].y - kPixelCenterShift};
+      const double center[2] = {element->center.x, element->center.y};
+      double corners[4][2];
+      for (int c = 0; c < 4; ++c) {
+        corners[c][0] = element->corners[c].x;
+        corners[c][1] = element->corners[c].y;
       }
-      result.push_back(detection);
+      result.push_back(make_detection(element->id, element->correctedBits, element->decisionMargin,
+                                      center, corners));
     }
     return result;
   }
 
  private:
-  static std::uint64_t resolve_hardware(Backend requested) {
-    const bool has_pva = vpi_platform_has_pva();
-    switch (requested) {
-      case Backend::kVpiPva:
-        if (!has_pva) {
-          throw std::runtime_error("backend vpi-pva: this platform has no PVA");
-        }
-        return VPI_BACKEND_PVA;
-      case Backend::kVpiCpu:
-        return VPI_BACKEND_CPU;
-      case Backend::kVpi:
-        return has_pva ? VPI_BACKEND_PVA : VPI_BACKEND_CPU;
-      default:
-        throw std::invalid_argument("not a VPI backend");
-    }
-  }
-
   // Copies `image` into the VPI-owned gray image, through the buffer type that
   // matches where the image lives.
   void upload(const GrayImageView& image, cudaStream_t stream) {
@@ -230,9 +202,6 @@ class VpiBackend final : public DetectorBackend {
     payload_ = nullptr;
   }
 
-  Backend requested_;
-  int width_;
-  int height_;
   std::uint64_t hardware_{VPI_BACKEND_CPU};
   VPIPayload payload_{nullptr};
   VPIImage gray_{nullptr};
@@ -242,17 +211,9 @@ class VpiBackend final : public DetectorBackend {
 
 }  // namespace
 
-bool vpi_platform_has_pva() {
-  VPIContext context = nullptr;
-  check(vpiContextGetCurrent(&context), "vpiContextGetCurrent");
-  std::uint64_t flags = 0;
-  check(vpiContextGetFlags(context, &flags), "vpiContextGetFlags");
-  return (flags & VPI_BACKEND_PVA) != 0U;
-}
-
-std::unique_ptr<DetectorBackend> create_vpi_backend(Backend backend, const DetectorOptions& options,
-                                                    int width, int height) {
-  return std::make_unique<VpiBackend>(backend, options, width, height);
+std::unique_ptr<DetectorBackend> create_vpi_backend(const DetectorOptions& options, int width,
+                                                    int height) {
+  return std::make_unique<VpiBackend>(options, width, height);
 }
 
 }  // namespace tag_detection

@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Development image for apriltag_detection: the SDK image plus NVIDIA VPI 4 for
-# the vpi backends. The cpu and cuda backends need nothing beyond the SDK.
+# the vpi backend. The cpu and cuda backends need nothing beyond the SDK.
 #
 # From the repository root:
 #   $ export HOLOSCAN_CLI_BASE_IMAGE=nvcr.io/nvidia/clara-holoscan/holoscan:v5.0.0-cuda13

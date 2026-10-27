@@ -8,6 +8,8 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES native CACHE STRING "CUDA architectures to compile")
 endif()
 project(apriltag_detection LANGUAGES C CXX CUDA)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CUDA_EXTENSIONS OFF)
 
 option(APRILTAG_DETECTION_ENABLE_VISUALIZATION "Build the Holoscan Visualization display" ON)
 option(APRILTAG_DETECTION_WITH_VPI "Build the VPI backend when VPI 4 is installed" ON)
@@ -90,8 +92,7 @@ if(APRILTAG_DETECTION_VPI)
   target_sources(apriltag_detection_core PRIVATE detector/vpi_backend.cpp)
   target_link_libraries(apriltag_detection_core PUBLIC vpi)
 endif()
-set_target_properties(apriltag_detection_core PROPERTIES
-  POSITION_INDEPENDENT_CODE ON CXX_EXTENSIONS OFF CUDA_EXTENSIONS OFF)
+set_target_properties(apriltag_detection_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # The detections message, generated from its FlatBuffers schema.
 holoscan_add_flatbuffer_schema(
@@ -107,23 +108,21 @@ add_library(apriltag_detection_operators STATIC
 target_include_directories(apriltag_detection_operators PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(apriltag_detection_operators PUBLIC
   apriltag_detection_core apriltag_detections_schema holoscan::core holoscan::sensor_io)
+target_compile_definitions(apriltag_detection_operators PUBLIC
+  APRILTAG_DETECTION_ENABLE_VISUALIZATION=$<BOOL:${APRILTAG_DETECTION_ENABLE_VISUALIZATION}>)
 if(APRILTAG_DETECTION_ENABLE_VISUALIZATION)
   target_sources(apriltag_detection_operators PRIVATE
     operators/apriltag_overlay_op.cpp)
   target_link_libraries(apriltag_detection_operators PUBLIC
     holoscan::visualization::op_holoviz)
 endif()
-set_target_properties(apriltag_detection_operators PROPERTIES CXX_EXTENSIONS OFF)
 
 add_executable(apriltag_detection main.cpp)
 target_link_libraries(apriltag_detection PRIVATE apriltag_detection_operators)
-target_compile_definitions(apriltag_detection PRIVATE
-  APRILTAG_DETECTION_ENABLE_VISUALIZATION=$<BOOL:${APRILTAG_DETECTION_ENABLE_VISUALIZATION}>)
 # Place the executable in the application's build directory, where the CLI
 # starts the run commands from metadata.json.
 set_target_properties(apriltag_detection PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
-  CXX_EXTENSIONS OFF)
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
 install(TARGETS apriltag_detection RUNTIME DESTINATION bin)
 
 if(BUILD_TESTING)

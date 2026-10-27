@@ -16,19 +16,18 @@
 
 #include <algorithm>
 #include <array>
-#include <memory>
-#include <span>
 #include <stdexcept>
 #include <string>
 
 namespace tag_detection {
-namespace {
 
 struct FamilyEntry {
   std::string_view name;
   apriltag_family_t* (*create)();
   void (*destroy)(apriltag_family_t*);
 };
+
+namespace {
 
 constexpr std::array<FamilyEntry, 9> kFamilies{{
     {"tag16h5", tag16h5_create, tag16h5_destroy},
@@ -50,17 +49,6 @@ const FamilyEntry* find_family(std::string_view name) noexcept {
 
 }  // namespace
 
-std::span<const std::string_view> family_names() noexcept {
-  static constexpr std::array<std::string_view, kFamilies.size()> kNames = [] {
-    std::array<std::string_view, kFamilies.size()> names{};
-    for (std::size_t i = 0; i < kFamilies.size(); ++i) {
-      names[i] = kFamilies[i].name;
-    }
-    return names;
-  }();
-  return kNames;
-}
-
 bool is_known_family(std::string_view name) noexcept { return find_family(name) != nullptr; }
 
 std::uint64_t decode_table_entries(std::string_view family, int max_hamming) {
@@ -73,25 +61,18 @@ std::uint64_t decode_table_entries(std::string_view family, int max_hamming) {
   return codes * variants;
 }
 
-void TagFamilyDeleter::operator()(apriltag_family* family) const noexcept {
-  if (family != nullptr && destroy != nullptr) {
-    destroy(family);
-  }
-}
-
-TagFamily::TagFamily(std::string_view name) {
-  const FamilyEntry* entry = find_family(name);
-  if (entry == nullptr) {
+TagFamily::TagFamily(std::string_view name) : entry_(find_family(name)) {
+  if (entry_ == nullptr) {
     throw std::invalid_argument("unknown AprilTag family '" + std::string(name) + "'");
   }
-  family_ = std::unique_ptr<apriltag_family, TagFamilyDeleter>(entry->create(),
-                                                               TagFamilyDeleter{entry->destroy});
-  if (!family_) {
+  family_ = entry_->create();
+  if (family_ == nullptr) {
     throw std::runtime_error("failed to create AprilTag family '" + std::string(name) + "'");
   }
-  name_ = entry->name;
 }
 
-TagFamily::~TagFamily() = default;
+TagFamily::~TagFamily() { entry_->destroy(family_); }
+
+std::string_view TagFamily::name() const noexcept { return entry_->name; }
 
 }  // namespace tag_detection

@@ -12,12 +12,14 @@ extern "C" {
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "homography.hpp"
 #include "tag_family.hpp"
 
 namespace tag_detection {
@@ -103,13 +105,12 @@ SyntheticScene make_scene(const std::string& family, std::uint32_t frame, int wi
 
 std::array<Point2, 4> project_corners(const SceneTag& tag, const CameraIntrinsics& intrinsics,
                                       double tag_size) {
-  constexpr std::array<Point2, 4> kIdeal{{{-1.0, 1.0}, {1.0, 1.0}, {1.0, -1.0}, {-1.0, -1.0}}};
   const auto& r = tag.pose.rotation;
   const auto& p = tag.pose.translation;
   std::array<Point2, 4> corners{};
   for (int i = 0; i < 4; ++i) {
-    const double x = kIdeal[i][0] * tag_size / 2.0;
-    const double y = kIdeal[i][1] * tag_size / 2.0;
+    const double x = ideal_x(i) * tag_size / 2.0;
+    const double y = ideal_y(i) * tag_size / 2.0;
     const double cx = r[0] * x + r[1] * y + p[0];
     const double cy = r[3] * x + r[4] * y + p[1];
     const double cz = r[6] * x + r[7] * y + p[2];
@@ -125,13 +126,9 @@ std::vector<std::uint8_t> render_scene(const SyntheticScene& scene, int channels
   const TagFamily family(scene.family);
   const int border = family.get()->width_at_border;
   const int total = family.get()->total_width;
-  struct Bitmap {
-    std::unique_ptr<image_u8_t, ImageDeleter> image;
-  };
-  std::vector<Bitmap> bitmaps;
+  std::vector<std::unique_ptr<image_u8_t, ImageDeleter>> bitmaps;
   for (const SceneTag& tag : scene.tags) {
-    bitmaps.push_back({std::unique_ptr<image_u8_t, ImageDeleter>(
-        apriltag_to_image(family.get(), static_cast<std::uint32_t>(tag.id)))});
+    bitmaps.emplace_back(apriltag_to_image(family.get(), static_cast<std::uint32_t>(tag.id)));
   }
   // Tag cells are tag_size / border meters; the printed tag gets one extra cell
   // of white paper around its full width.
@@ -195,7 +192,7 @@ std::vector<std::uint8_t> render_scene(const SyntheticScene& scene, int channels
             nearest = s;
             const int col = static_cast<int>(std::floor(x / cell + total / 2.0));
             const int row = static_cast<int>(std::floor(y / cell + total / 2.0));
-            const image_u8_t* bitmap = bitmaps[i].image.get();
+            const image_u8_t* bitmap = bitmaps[i].get();
             const bool inside = col >= 0 && row >= 0 && col < total && row < total;
             const bool white = !inside || bitmap->buf[row * bitmap->stride + col] > 127;
             value = white ? 225.0 : 25.0;
@@ -213,6 +210,37 @@ std::vector<std::uint8_t> render_scene(const SyntheticScene& scene, int channels
     }
   }
   return pixels;
+}
+
+TruthCounts match_truth(const SyntheticScene& scene, std::span<const Detection> detections,
+                        const std::function<void(const TruthMatch&)>& on_match) {
+  std::map<int, const SceneTag*> expected;
+  for (const SceneTag& tag : scene.tags) expected[tag.id] = &tag;
+  TruthCounts counts;
+  for (const Detection& detection : detections) {
+    const auto it = expected.find(detection.id);
+    if (it == expected.end()) {
+      ++counts.extra;
+      continue;
+    }
+    const SceneTag& tag = *it->second;
+    const auto corners = project_corners(tag, scene.intrinsics, scene.tag_size);
+    TruthMatch match{detection, tag, {}, std::nullopt};
+    for (int c = 0; c < 4; ++c) {
+      match.corner_errors[c] = std::hypot(detection.corners[c][0] - corners[c][0],
+                                          detection.corners[c][1] - corners[c][1]);
+    }
+    if (detection.pose) {
+      const auto& t = tag.pose.translation;
+      const auto& found = detection.pose->translation;
+      match.translation_error = std::hypot(found[0] - t[0], found[1] - t[1], found[2] - t[2]) /
+                                std::hypot(t[0], t[1], t[2]);
+    }
+    on_match(match);
+    expected.erase(it);
+  }
+  counts.missed = static_cast<int>(expected.size());
+  return counts;
 }
 
 }  // namespace tag_detection

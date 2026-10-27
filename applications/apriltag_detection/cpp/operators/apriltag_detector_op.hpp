@@ -1,10 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// AprilTagDetectorOp: an image in, the tags in it out. The detection backend
-// (CPU, CUDA or VPI) is chosen by configuration; the operator converts the
-// image to gray where that backend wants it, detects, estimates poses when the
-// camera's intrinsics are known, and emits one AprilTagDetections per image.
+// AprilTagDetectorOp: an image in, one AprilTagDetections out, on the configured
+// backend (CPU, CUDA or VPI), with poses when the camera's intrinsics are known.
 
 #pragma once
 
@@ -44,14 +42,13 @@ struct AprilTagDetectorConfig {
 // @throws std::invalid_argument naming the first unusable field.
 void validate_config(const AprilTagDetectorConfig& config);
 
+// A message's detection as the backends report it (pose included when present).
+[[nodiscard]] Detection from_message(const schema::TagDetection& tag);
+
 class AprilTagDetectorOp final : public holoscan::Operator<> {
  public:
   // @throws std::invalid_argument if `config` is not valid.
-  // With Backend::kVpiPva, construction asks VPI whether there is a PVA, which
-  // starts VPI's worker threads: create any holoscan::ManagedShutdownSignals
-  // before building the graph.
   explicit AprilTagDetectorOp(AprilTagDetectorConfig config);
-  ~AprilTagDetectorOp() override;
 
   void setup(holoscan::OperatorSpec& spec) override;
   [[nodiscard]] holoscan::Contract contract() const override;
@@ -71,8 +68,14 @@ class AprilTagDetectorOp final : public holoscan::Operator<> {
   int image_width_{};
   int image_height_{};
   GrayConverter converter_;
+  struct StreamDestroy {
+    void operator()(cudaStream_t stream) const noexcept {
+      cudaStreamSynchronize(stream);
+      cudaStreamDestroy(stream);
+    }
+  };
   // For frames whose activation has no runtime CUDA stream; made on first use.
-  cudaStream_t own_stream_{};
+  std::unique_ptr<CUstream_st, StreamDestroy> own_stream_;
   std::uint64_t frames_{};
 };
 

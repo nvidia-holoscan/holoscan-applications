@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // A deterministic scene of tags at known poses, rendered without external data,
-// so the application and its tests can check detections against ground truth.
+// and the scorer that checks detections against it.
 
 #pragma once
 
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -45,5 +48,23 @@ struct SyntheticScene {
 [[nodiscard]] std::array<Point2, 4> project_corners(const SceneTag& tag,
                                                     const CameraIntrinsics& intrinsics,
                                                     double tag_size);
+
+// One detection of a scene tag: its corners' errors in pixels and, with a pose,
+// its translation error as a fraction of the tag's distance.
+struct TruthMatch {
+  const Detection& detection;
+  const SceneTag& tag;
+  std::array<double, 4> corner_errors;
+  std::optional<double> translation_error;
+};
+
+struct TruthCounts {
+  int extra{};   // Detections of no scene tag; a second report of one tag counts too.
+  int missed{};  // Scene tags not detected.
+};
+
+// Matches `detections` to `scene`'s tags by id, calling `on_match` for each match.
+TruthCounts match_truth(const SyntheticScene& scene, std::span<const Detection> detections,
+                        const std::function<void(const TruthMatch&)>& on_match);
 
 }  // namespace tag_detection

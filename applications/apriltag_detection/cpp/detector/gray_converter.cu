@@ -61,77 +61,55 @@ void to_gray_host(const ImageView& input, std::uint8_t* output) {
 
 int channels(PixelFormat format) noexcept { return order_of(format).stride; }
 
-GrayConverter::~GrayConverter() { release(); }
-
-void GrayConverter::release() noexcept {
-  if (host_gray_ != nullptr) cudaFreeHost(host_gray_);
-  if (device_gray_ != nullptr) cudaFree(device_gray_);
-  host_gray_ = nullptr;
-  device_gray_ = nullptr;
-  width_ = height_ = 0;
-}
-
-void GrayConverter::reserve(int width, int height) {
-  if (width == width_ && height == height_) {
-    return;
-  }
-  release();
-  const std::size_t bytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-  cuda_check(cudaMallocHost(reinterpret_cast<void**>(&host_gray_), bytes), "cudaMallocHost(gray)");
-  cuda_check(cudaMalloc(reinterpret_cast<void**>(&device_gray_), bytes), "cudaMalloc(gray)");
-  width_ = width;
-  height_ = height;
-}
-
 GrayImageView GrayConverter::convert(const ImageView& input, MemoryLocation target,
                                      cudaStream_t stream) {
   if (input.format == PixelFormat::kMono8 && input.location == target) {
     return {input.data, input.width, input.height, input.pitch, target};
   }
-  reserve(input.width, input.height);
   const auto width = static_cast<std::size_t>(input.width);
   const auto height = static_cast<std::size_t>(input.height);
-  const GrayImageView host{host_gray_, input.width, input.height, width, MemoryLocation::kHost};
-  const GrayImageView device{device_gray_, input.width, input.height, width,
-                             MemoryLocation::kDevice};
-
-  if (input.location == MemoryLocation::kHost) {
-    // Convert on the host, then move a third (or a quarter) of the bytes.
-    const std::uint8_t* gray = input.data;
-    std::size_t gray_pitch = input.pitch;
-    if (input.format != PixelFormat::kMono8) {
-      to_gray_host(input, host_gray_);
-      gray = host_gray_;
-      gray_pitch = width;
-    }
-    if (target == MemoryLocation::kHost) {
-      return host;
-    }
-    cuda_check(cudaMemcpy2DAsync(device_gray_, width, gray, gray_pitch, width, height,
-                                 cudaMemcpyHostToDevice, stream),
-               "cudaMemcpy2DAsync(gray to device)");
-    return device;
+  if (input.width != width_ || input.height != height_) {
+    host_gray_.reset();
+    device_gray_.reset();
+    width_ = height_ = 0;
+    void* host = nullptr;
+    void* device = nullptr;
+    cuda_check(cudaMallocHost(&host, width * height), "cudaMallocHost(gray)");
+    host_gray_.reset(static_cast<std::uint8_t*>(host));
+    cuda_check(cudaMalloc(&device, width * height), "cudaMalloc(gray)");
+    device_gray_.reset(static_cast<std::uint8_t*>(device));
+    width_ = input.width;
+    height_ = input.height;
   }
-
+  const bool on_host = input.location == MemoryLocation::kHost;
+  // Convert where the image is: a third (or a quarter) of the bytes then moves.
   const std::uint8_t* gray = input.data;
   std::size_t gray_pitch = input.pitch;
   if (input.format != PixelFormat::kMono8) {
-    const dim3 block(32, 8);
-    const dim3 grid((input.width + block.x - 1) / block.x, (input.height + block.y - 1) / block.y);
-    to_gray_kernel<<<grid, block, 0, stream>>>(input.data, input.pitch, input.format, input.width,
-                                               input.height, device_gray_);
-    cuda_check(cudaGetLastError(), "to_gray_kernel");
-    gray = device_gray_;
+    std::uint8_t* out = on_host ? host_gray_.get() : device_gray_.get();
+    if (on_host) {
+      to_gray_host(input, out);
+    } else {
+      const dim3 block(32, 8);
+      const dim3 grid((input.width + block.x - 1) / block.x,
+                      (input.height + block.y - 1) / block.y);
+      to_gray_kernel<<<grid, block, 0, stream>>>(input.data, input.pitch, input.format, input.width,
+                                                 input.height, out);
+      cuda_check(cudaGetLastError(), "to_gray_kernel");
+    }
+    gray = out;
     gray_pitch = width;
   }
-  if (target == MemoryLocation::kDevice) {
-    return device;
+  std::uint8_t* result = target == MemoryLocation::kHost ? host_gray_.get() : device_gray_.get();
+  if (input.location != target) {
+    cuda_check(cudaMemcpy2DAsync(result, width, gray, gray_pitch, width, height,
+                                 on_host ? cudaMemcpyHostToDevice : cudaMemcpyDeviceToHost, stream),
+               "cudaMemcpy2DAsync(gray)");
+    if (target == MemoryLocation::kHost) {
+      cuda_check(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
+    }
   }
-  cuda_check(cudaMemcpy2DAsync(host_gray_, width, gray, gray_pitch, width, height,
-                               cudaMemcpyDeviceToHost, stream),
-             "cudaMemcpy2DAsync(gray to host)");
-  cuda_check(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
-  return host;
+  return {result, input.width, input.height, width, target};
 }
 
 }  // namespace tag_detection

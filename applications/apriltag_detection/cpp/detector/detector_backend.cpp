@@ -16,21 +16,16 @@
 namespace tag_detection {
 namespace {
 
-constexpr std::array<std::pair<Backend, std::string_view>, 5> kBackendNames{{
+constexpr std::array<std::pair<Backend, std::string_view>, 3> kBackendNames{{
     {Backend::kCpu, "cpu"},
     {Backend::kCuda, "cuda"},
     {Backend::kVpi, "vpi"},
-    {Backend::kVpiPva, "vpi-pva"},
-    {Backend::kVpiCpu, "vpi-cpu"},
 }};
 
-// Codes, with every variant up to two bits off, that a decode table may hold.
-// AprilTag's own advice: correct two bits only in the smaller families.
+// Decode-table entries allowed: AprilTag advises two-bit correction only for small families.
 constexpr std::uint64_t kMaxDecodeEntries = 8'000'000;
 
-bool is_vpi(Backend backend) noexcept {
-  return backend == Backend::kVpi || backend == Backend::kVpiPva || backend == Backend::kVpiCpu;
-}
+constexpr std::string_view kNoVpi = "backend vpi: this build has no VPI; install VPI 4 and rebuild";
 
 }  // namespace
 
@@ -80,23 +75,26 @@ void validate_options(const DetectorOptions& options) {
   if (options.min_white_black_diff < 1 || options.min_white_black_diff > 255) {
     throw std::invalid_argument("min_white_black_diff must be in 1..255");
   }
-  if (options.cpu_threads < 1 || options.cpu_threads > 64) {
-    throw std::invalid_argument("cpu_threads must be in 1..64");
-  }
 }
 
 void check_available(Backend backend) {
-  if (!is_vpi(backend)) {
-    return;
+  if (backend == Backend::kVpi && !APRILTAG_DETECTION_WITH_VPI) {
+    throw std::invalid_argument(std::string(kNoVpi));
   }
-#if APRILTAG_DETECTION_WITH_VPI
-  if (backend == Backend::kVpiPva && !vpi_platform_has_pva()) {
-    throw std::invalid_argument("backend vpi-pva: this platform has no PVA; use vpi or vpi-cpu");
-  }
-#else
-  throw std::invalid_argument("backend " + std::string(backend_name(backend)) +
-                              ": this build has no VPI; install VPI 4 and rebuild");
+}
+
+#if !APRILTAG_DETECTION_WITH_VPI
+std::unique_ptr<DetectorBackend> create_vpi_backend(const DetectorOptions&, int, int) {
+  throw std::invalid_argument(std::string(kNoVpi));
+}
 #endif
+
+std::vector<Detection> DetectorBackend::detect(const GrayImageView& image, cudaStream_t stream) {
+  if (image.location != input_location() || image.width != width_ || image.height != height_) {
+    throw std::invalid_argument(std::string(name()) +
+                                " backend: the image is not of the configured size and location");
+  }
+  return find(image, stream);
 }
 
 std::unique_ptr<DetectorBackend> create_backend(Backend backend, const DetectorOptions& options,
@@ -110,16 +108,8 @@ std::unique_ptr<DetectorBackend> create_backend(Backend backend, const DetectorO
       return create_cpu_backend(options, width, height);
     case Backend::kCuda:
       return create_cuda_backend(options, width, height);
-    default:
-      break;
-  }
-  if (is_vpi(backend)) {
-#if APRILTAG_DETECTION_WITH_VPI
-    return create_vpi_backend(backend, options, width, height);
-#else
-    throw std::invalid_argument("backend " + std::string(backend_name(backend)) +
-                                ": this build has no VPI; install VPI 4 and rebuild");
-#endif
+    case Backend::kVpi:
+      return create_vpi_backend(options, width, height);
   }
   throw std::invalid_argument("unknown backend");
 }

@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// The interface every detector backend implements, and the factory that builds
-// one. A backend finds tags and their corners; poses are estimated afterwards by
-// pose.hpp, the same way for every backend.
+// The interface every detector backend implements, and its factory. Backends
+// find tags and corners; pose.hpp estimates poses the same way for all of them.
 
 #pragma once
 
@@ -23,55 +22,59 @@ class DetectorBackend {
   DetectorBackend(const DetectorBackend&) = delete;
   DetectorBackend& operator=(const DetectorBackend&) = delete;
 
-  [[nodiscard]] virtual Backend kind() const noexcept = 0;
-  // The hardware actually used, for backends that choose it: "vpi-pva" or
-  // "vpi-cpu" for kVpi. Otherwise backend_name(kind()).
-  [[nodiscard]] virtual std::string_view resolved_name() const noexcept {
-    return backend_name(kind());
-  }
+  // "cpu", "cuda", or the hardware VPI uses: "vpi-pva" or "vpi-cpu".
+  [[nodiscard]] virtual std::string_view name() const noexcept = 0;
   // Where `detect` wants its image; the caller converts and copies to match.
   [[nodiscard]] virtual MemoryLocation input_location() const noexcept = 0;
-  // Finds tags in `image`, which must be `width` x `height` as created and in
-  // `input_location()`. Device work is ordered on `stream`; results are on the
+  // Finds tags in `image`, which must be the size the backend was built for and
+  // in input_location(). Device work is ordered on `stream`; results are on the
   // host when this returns. Poses are left empty.
+  // @throws std::invalid_argument for an image of another size or location.
   // @throws std::runtime_error on a backend failure.
-  [[nodiscard]] virtual std::vector<Detection> detect(const GrayImageView& image,
-                                                      cudaStream_t stream) = 0;
+  [[nodiscard]] std::vector<Detection> detect(const GrayImageView& image, cudaStream_t stream);
 
  protected:
-  DetectorBackend() = default;
+  DetectorBackend(int width, int height) : width_(width), height_(height) {}
+  // detect() once the image is checked.
+  [[nodiscard]] virtual std::vector<Detection> find(const GrayImageView& image,
+                                                    cudaStream_t stream) = 0;
+
+  int width_;
+  int height_;
 };
 
-// Checks that `backend` is compiled in and its hardware is present, without
-// building it.
+// A detection from coordinates with pixel centers at +0.5 (AprilTag 3, VPI and
+// the CUDA decoder), moved to integer pixel centers.
+[[nodiscard]] inline Detection make_detection(int id, int hamming, float margin,
+                                              const double (&center)[2],
+                                              const double (&corners)[4][2]) {
+  Detection detection{.id = id, .hamming = hamming, .decision_margin = margin};
+  detection.center = {center[0] - 0.5, center[1] - 0.5};
+  for (int i = 0; i < 4; ++i) {
+    detection.corners[i] = {corners[i][0] - 0.5, corners[i][1] - 0.5};
+  }
+  return detection;
+}
+
+// Checks that `backend` is compiled into this build, without building it.
 // @throws std::invalid_argument naming what is missing.
 void check_available(Backend backend);
 
 // Builds `backend` for `width` x `height` gray images.
 // @throws std::invalid_argument if the options or size are not usable with this
 //         backend, or the backend is not compiled into this build.
-// @throws std::runtime_error if the backend fails to initialize (for example,
-//         VPI reports no PVA on this platform).
+// @throws std::runtime_error if the backend fails to initialize.
 [[nodiscard]] std::unique_ptr<DetectorBackend> create_backend(Backend backend,
                                                               const DetectorOptions& options,
                                                               int width, int height);
 
-// Each backend's factory, in its own source file. create_backend validates
-// their arguments first.
-// The AprilTag 3 reference detector on a host image.
+// Each backend's factory, in its own source file; create_backend validates
+// their arguments first. VPI's throws in a build without VPI.
 [[nodiscard]] std::unique_ptr<DetectorBackend> create_cpu_backend(const DetectorOptions& options,
                                                                   int width, int height);
-// Segmentation, quad fitting and decoding on the GPU, reading a device image.
 [[nodiscard]] std::unique_ptr<DetectorBackend> create_cuda_backend(const DetectorOptions& options,
                                                                    int width, int height);
-#if APRILTAG_DETECTION_WITH_VPI
-// VPI's detector on the PVA or the CPU; `backend` is kVpi, kVpiPva or kVpiCpu.
-[[nodiscard]] std::unique_ptr<DetectorBackend> create_vpi_backend(Backend backend,
-                                                                  const DetectorOptions& options,
+[[nodiscard]] std::unique_ptr<DetectorBackend> create_vpi_backend(const DetectorOptions& options,
                                                                   int width, int height);
-// Whether VPI reports a PVA on this platform.
-// @throws std::runtime_error if VPI cannot be queried.
-[[nodiscard]] bool vpi_platform_has_pva();
-#endif
 
 }  // namespace tag_detection
