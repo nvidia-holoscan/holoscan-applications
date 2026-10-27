@@ -8,15 +8,17 @@ include(CTest)
 # Also provide the CLI language switch for standalone application builds.
 option(HOLOHUB_BUILD_CPP "Build support for C++" ON)
 
-# The webcam's YUYV conversion is header-only and needs no SDK or GPU. Keep its
-# test outside the C++ dependency scope for hosted CI.
+# The webcam's YUYV conversion and the overlay's axis drawing are header-only and
+# need no SDK or GPU. Keep their tests outside the C++ dependency scope for hosted CI.
 if(BUILD_TESTING)
   enable_language(CXX)
-  add_executable(apriltag_yuyv_test tests/yuyv_test.cpp)
-  target_include_directories(apriltag_yuyv_test PRIVATE cpp tests)
-  target_compile_features(apriltag_yuyv_test PRIVATE cxx_std_20)
-  add_test(NAME apriltag_yuyv COMMAND apriltag_yuyv_test)
-  set_tests_properties(apriltag_yuyv PROPERTIES LABELS "apriltag" TIMEOUT 60)
+  foreach(_test IN ITEMS yuyv tag_axes)
+    add_executable(apriltag_${_test}_test tests/${_test}_test.cpp)
+    target_include_directories(apriltag_${_test}_test PRIVATE cpp tests)
+    target_compile_features(apriltag_${_test}_test PRIVATE cxx_std_20)
+    add_test(NAME apriltag_${_test} COMMAND apriltag_${_test}_test)
+    set_tests_properties(apriltag_${_test} PROPERTIES LABELS "apriltag" TIMEOUT 60)
+  endforeach()
 endif()
 
 if(HOLOHUB_BUILD_CPP)

@@ -6,7 +6,7 @@
 // corners and poses out, for every compiled backend; a change of image size
 // and non-default options; unsupported images rejected; the detector off the
 // legacy default CUDA stream; the reporter's counts; and the overlay's
-// Holoviz tensors shaped, scaled and stamped as Holoviz expects.
+// Holoviz layers shaped, drawn and stamped as Holoviz expects.
 
 #include <cuda_runtime_api.h>
 
@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -71,14 +72,10 @@ std::shared_ptr<holoscan::Tensor> host_tensor(std::vector<std::uint8_t> bytes,
   return std::make_shared<holoscan::Tensor>(&storage.release()->managed);
 }
 
-// How an image's pixels are laid out in its tensor. (The harness stages only
-// contiguous tensors, so rows cannot be padded here.)
-struct Layout {
-  bool rank2{};  // MONO8 as [height, width] rather than [height, width, 1].
-};
-
+// `scene` as an image tensor; with `rank2`, MONO8 as [height, width], not
+// [height, width, 1]. (The harness stages only contiguous tensors.)
 holoscan::schema::ImageT scene_image(const SyntheticScene& scene,
-                                     holoscan::schema::ImageEncoding encoding, Layout layout = {}) {
+                                     holoscan::schema::ImageEncoding encoding, bool rank2 = false) {
   using holoscan::schema::ImageEncoding_BGR8;
   using holoscan::schema::ImageEncoding_BGRA8;
   using holoscan::schema::ImageEncoding_MONO8;
@@ -107,7 +104,7 @@ holoscan::schema::ImageT scene_image(const SyntheticScene& scene,
   }
   std::vector<std::int64_t> shape{scene.height, scene.width};
   std::vector<std::int64_t> strides{static_cast<std::int64_t>(row)};
-  if (!layout.rank2) {
+  if (!rank2) {
     shape.push_back(channels);
     strides.push_back(channels);
   }
@@ -129,42 +126,46 @@ void check_message(const schema::AprilTagDetectionsT& message, const SyntheticSc
   VERIFY_MSG(message.detections.size() == scene.tags.size(),
              "frame " + std::to_string(message.frame) + ": " +
                  std::to_string(message.detections.size()) + " tags");
-  for (const schema::TagDetection& tag : message.detections) {
-    const auto truth = std::find_if(scene.tags.begin(), scene.tags.end(),
-                                    [&](const SceneTag& t) { return t.id == tag.id(); });
-    VERIFY_MSG(truth != scene.tags.end(), "unexpected id " + std::to_string(tag.id()));
-    if (truth == scene.tags.end()) continue;
-    const auto corners = project_corners(*truth, scene.intrinsics, scene.tag_size);
-    for (int c = 0; c < 4; ++c) {
-      const auto& corner = *tag.corners()->Get(c);
-      VERIFY(std::hypot(corner.x() - corners[c][0], corner.y() - corners[c][1]) < 1.0);
-    }
-    VERIFY(tag.has_pose() == poses);
-    if (!poses) continue;
-    const auto& t = truth->pose.translation;
-    VERIFY(std::hypot(tag.translation()->Get(0) - t[0], tag.translation()->Get(1) - t[1],
-                      tag.translation()->Get(2) - t[2]) < 0.02 * t[2]);
-  }
+  std::vector<Detection> found;
+  for (const schema::TagDetection& tag : message.detections) found.push_back(from_message(tag));
+  const TruthCounts counts = match_truth(scene, found, [poses](const TruthMatch& match) {
+    for (const double error : match.corner_errors) VERIFY(error < 1.0);
+    VERIFY(match.detection.pose.has_value() == poses);
+    if (!match.detection.pose) return;
+    const auto& t = match.tag.pose.translation;
+    const auto& p = match.detection.pose->translation;
+    VERIFY(std::hypot(p[0] - t[0], p[1] - t[1], p[2] - t[2]) < 0.02 * t[2]);
+  });
+  VERIFY_MSG(counts.extra == 0, std::to_string(counts.extra) + " unexpected or repeated tags");
 }
 
-void check_detector(Backend backend, holoscan::schema::ImageEncoding encoding, Layout layout = {}) {
-  constexpr std::uint32_t kFrames = 3;
-  const SyntheticScene first = make_scene("tag36h11", 0, kWidth, kHeight);
-  AprilTagDetectorConfig config{
-      .backend = backend, .intrinsics = first.intrinsics, .tag_size = first.tag_size};
+// Runs a detector over `images`: one message per image, or none if the run fails.
+std::vector<schema::AprilTagDetectionsT> run_detector(
+    const AprilTagDetectorConfig& config, const std::vector<holoscan::schema::ImageT>& images) {
   auto h = holoscan::testing::create_operator_test<AprilTagDetectorOp>(config);
-  for (std::uint32_t frame = 0; frame < kFrames; ++frame) {
-    h.push("image", scene_image(make_scene("tag36h11", frame, kWidth, kHeight), encoding, layout));
-  }
+  for (const auto& image : images) h.push("image", image);
   h.capture<schema::AprilTagDetectionsT>("detections");
   const auto result = h.run();
   VERIFY_MSG(result.ok(), result.describe_failure());
-  if (!result.ok()) return;
-  const auto messages = result.values<schema::AprilTagDetectionsT>("detections");
-  VERIFY(messages.size() == kFrames);
+  if (!result.ok()) return {};
+  auto messages = result.values<schema::AprilTagDetectionsT>("detections");
+  VERIFY(messages.size() == images.size());
+  return messages;
+}
+
+void check_detector(Backend backend, holoscan::schema::ImageEncoding encoding, bool rank2 = false) {
+  constexpr std::uint32_t kFrames = 3;
+  const SyntheticScene first = make_scene("tag36h11", 0, kWidth, kHeight);
+  std::vector<holoscan::schema::ImageT> images;
+  for (std::uint32_t frame = 0; frame < kFrames; ++frame) {
+    images.push_back(scene_image(make_scene("tag36h11", frame, kWidth, kHeight), encoding, rank2));
+  }
+  const auto messages = run_detector(
+      {.backend = backend, .intrinsics = first.intrinsics, .tag_size = first.tag_size}, images);
   for (std::size_t i = 0; i < messages.size(); ++i) {
     VERIFY(messages[i].frame == i);
-    VERIFY(messages[i].backend == backend_name(backend));
+    // VPI reports the hardware it chose: vpi-pva or vpi-cpu.
+    VERIFY(messages[i].backend.starts_with(backend_name(backend)));
     check_message(messages[i],
                   make_scene("tag36h11", static_cast<std::uint32_t>(i), kWidth, kHeight), true);
   }
@@ -172,20 +173,14 @@ void check_detector(Backend backend, holoscan::schema::ImageEncoding encoding, L
 
 // The backend is rebuilt when the image size changes, and detects at both.
 void check_size_change(Backend backend) {
-  auto h = holoscan::testing::create_operator_test<AprilTagDetectorOp>(
-      AprilTagDetectorConfig{.backend = backend});
   const std::array<SyntheticScene, 3> scenes{make_scene("tag36h11", 0, kWidth, kHeight),
                                              make_scene("tag36h11", 1, 800, 600),
                                              make_scene("tag36h11", 2, kWidth, kHeight)};
+  std::vector<holoscan::schema::ImageT> images;
   for (const SyntheticScene& scene : scenes) {
-    h.push("image", scene_image(scene, holoscan::schema::ImageEncoding_MONO8));
+    images.push_back(scene_image(scene, holoscan::schema::ImageEncoding_MONO8));
   }
-  h.capture<schema::AprilTagDetectionsT>("detections");
-  const auto result = h.run();
-  VERIFY_MSG(result.ok(), result.describe_failure());
-  if (!result.ok()) return;
-  const auto messages = result.values<schema::AprilTagDetectionsT>("detections");
-  VERIFY(messages.size() == scenes.size());
+  const auto messages = run_detector({.backend = backend}, images);
   for (std::size_t i = 0; i < messages.size() && i < scenes.size(); ++i) {
     check_message(messages[i], scenes[i], false);
   }
@@ -198,16 +193,12 @@ void check_options(Backend backend) {
   config.options.refine_edges = false;
   config.options.max_hamming = 0;
   config.options.decode_sharpening = 0.0;
-  auto h = holoscan::testing::create_operator_test<AprilTagDetectorOp>(config);
   const SyntheticScene scene = make_scene("tag36h11", 3, kWidth, kHeight);
-  h.push("image", scene_image(scene, holoscan::schema::ImageEncoding_MONO8));
-  h.capture<schema::AprilTagDetectionsT>("detections");
-  const auto result = h.run();
-  VERIFY_MSG(result.ok(), result.describe_failure());
-  if (!result.ok()) return;
-  const auto message = result.value<schema::AprilTagDetectionsT>("detections");
-  check_message(message, scene, false);
-  for (const schema::TagDetection& tag : message.detections) {
+  const auto messages =
+      run_detector(config, {scene_image(scene, holoscan::schema::ImageEncoding_MONO8)});
+  if (messages.size() != 1) return;
+  check_message(messages.front(), scene, false);
+  for (const schema::TagDetection& tag : messages.front().detections) {
     VERIFY(tag.hamming() == 0);
   }
 }
@@ -355,7 +346,7 @@ schema::AprilTagDetectionsT one_tag_message(std::uint64_t frame, bool pose) {
 void check_report_counts() {
   auto report = std::make_shared<BackendReport>();
   auto h = holoscan::testing::create_operator_test<DetectionReportOp>(
-      DetectionReportConfig{.report = report, .completion = std::make_shared<RunCompletion>()});
+      DetectionReportConfig{.report = report, .remaining = std::make_shared<std::atomic<int>>()});
   h.push("detections", one_tag_message(0, false));
   h.push("detections", one_tag_message(1, true));
   const auto result = h.run();
@@ -366,26 +357,43 @@ void check_report_counts() {
 }
 
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
+// One tag message through the overlay; its axes image and labels, or nothing if it failed.
+struct OverlayOutput {
+  holoscan::testing::SchemaSnapshot<holoscan::schema::ImageT> axes;
+  holoscan::testing::TensorSnapshot labels;
+};
+std::optional<OverlayOutput> run_overlay(
+    const AprilTagOverlayConfig& config,
+    holoscan::testing::TestSample<schema::AprilTagDetectionsT> sample) {
+  auto h = holoscan::testing::create_operator_test<AprilTagOverlayOp>(config);
+  h.push_samples<schema::AprilTagDetectionsT>("detections", {std::move(sample)});
+  h.capture_snapshot<holoscan::schema::ImageT>("axes");
+  h.capture_snapshot<holoscan::Tensor>("labels");
+  const auto result = h.run();
+  VERIFY_MSG(result.ok(), result.describe_failure());
+  if (!result.ok()) return std::nullopt;
+  return OverlayOutput{result.snapshot<holoscan::schema::ImageT>("axes"),
+                       result.snapshot<holoscan::Tensor>("labels")};
+}
+
+// The RGBA pixel at (x, y) of a 200x100 axes image.
+std::array<std::uint8_t, 4> pixel(const holoscan::testing::TensorSnapshot& image, int x, int y) {
+  const auto* p = reinterpret_cast<const std::uint8_t*>(image.bytes().data()) + (y * 200 + x) * 4;
+  return {p[0], p[1], p[2], p[3]};
+}
+
 void check_overlay() {
   // The frame's provenance, which the overlay's layers must carry. (The harness
   // activates the overlay at the capture time, so the frame id is what tells
   // forwarded provenance from a fresh stamp.)
   constexpr std::chrono::nanoseconds kCaptured = std::chrono::milliseconds(1234);
   constexpr std::uint64_t kFrameId = 9;
-  auto h = holoscan::testing::create_operator_test<AprilTagOverlayOp>();
   holoscan::testing::TestSample<schema::AprilTagDetectionsT> sample{
       .data = one_tag_message(0, false), .capture_coordinate = kCaptured};
   sample.metadata.frame_id = kFrameId;
-  h.push_samples<schema::AprilTagDetectionsT>("detections", {std::move(sample)});
-  h.capture_snapshot<holoscan::Tensor>("outlines");
-  h.capture_snapshot<holoscan::Tensor>("labels");
-  const auto result = h.run();
-  VERIFY_MSG(result.ok(), result.describe_failure());
-  if (!result.ok()) return;
-
-  const auto outlines = result.snapshot<holoscan::Tensor>("outlines");
-  for (const auto* metadata : {&outlines.sample_metadata(),
-                               &result.snapshot<holoscan::Tensor>("labels").sample_metadata()}) {
+  const auto out = run_overlay({.width = 200, .height = 100}, std::move(sample));
+  if (!out) return;
+  for (const auto* metadata : {&out->axes.sample_metadata(), &out->labels.sample_metadata()}) {
     VERIFY_MSG(metadata->source_clock_id.valid() &&
                    metadata->capture_timestamp_ns == kCaptured.count() &&
                    metadata->frame_id == kFrameId,
@@ -393,41 +401,61 @@ void check_overlay() {
                    std::to_string(metadata->capture_timestamp_ns) + " ns, frame " +
                    std::to_string(metadata->frame_id));
   }
-  VERIFY(outlines.shape() == std::vector<std::int64_t>{4 * kOverlayLinesPerTag});
-  std::vector<float> lines(4 * kOverlayLinesPerTag);
-  std::memcpy(lines.data(), outlines.bytes().data(), lines.size() * sizeof(float));
-  const auto near = [&lines](std::size_t first, std::array<float, 4> want) {
-    for (std::size_t i = 0; i < want.size(); ++i) {
-      if (std::abs(lines[first + i] - want[i]) > 1e-6F) return false;
-    }
-    return true;
-  };
-  // The first edge runs from corner 0 to corner 1, normalized by the image size.
-  VERIFY(near(0, {0.1F, 0.8F, 0.4F, 0.8F}));
-  // The x-axis stroke runs from the center to the middle of corners 1 and 2.
-  VERIFY(near(16, {0.25F, 0.5F, 0.4F, 0.5F}));
+  VERIFY(out->axes.metadata().encoding == holoscan::schema::ImageEncoding_RGBA8);
+  const auto& image = out->axes.tensor(holoscan::schema::ImageTensorFields::data);
+  VERIFY(image.shape() == (std::vector<std::int64_t>{100, 200, 4}));
+  // Without a pose: X from the center (50, 50) toward (80, 50), Y toward (50, 80).
+  VERIFY((pixel(image, 65, 50) == std::array<std::uint8_t, 4>{255, 0, 0, 255}));
+  VERIFY((pixel(image, 50, 65) == std::array<std::uint8_t, 4>{0, 255, 0, 255}));
+  VERIFY((pixel(image, 10, 10) == std::array<std::uint8_t, 4>{0, 0, 0, 0}));
 
-  const auto labels = result.snapshot<holoscan::Tensor>("labels");
-  VERIFY(labels.shape() == (std::vector<std::int64_t>{
-                               static_cast<std::int64_t>(kMaxDetectionsPerFrame),
-                               holoscan::visualization::kTextRunHeaderBytes + kOverlayLabelBytes}));
-  const auto* first_text = reinterpret_cast<const char*>(labels.bytes().data()) +
+  VERIFY(out->labels.shape() ==
+         (std::vector<std::int64_t>{
+             static_cast<std::int64_t>(kMaxDetectionsPerFrame),
+             holoscan::visualization::kTextRunHeaderBytes + kOverlayLabelBytes}));
+  const auto* first_text = reinterpret_cast<const char*>(out->labels.bytes().data()) +
                            holoscan::visualization::kTextRunHeaderBytes;
   VERIFY(std::string(first_text, 4) == "id 7");
+}
+
+// With a pose and intrinsics the Z axis is drawn too, in blue.
+void check_overlay_pose() {
+  const auto out = run_overlay({.width = 200,
+                                .height = 100,
+                                .intrinsics = CameraIntrinsics{400, 400, 50, 150},
+                                .tag_size = 0.2},
+                               {.data = one_tag_message(0, true)});
+  if (!out) return;
+  const auto& image = out->axes.tensor(holoscan::schema::ImageTensorFields::data);
+  VERIFY((pixel(image, 110, 50) == std::array<std::uint8_t, 4>{255, 0, 0, 255}));
+  VERIFY((pixel(image, 100, 62) == std::array<std::uint8_t, 4>{0, 255, 0, 255}));
+  VERIFY((pixel(image, 97, 54) == std::array<std::uint8_t, 4>{0, 0, 255, 255}));
+}
+
+// A frame without tags clears the axes: a fully transparent image.
+void check_overlay_empty() {
+  schema::AprilTagDetectionsT message = one_tag_message(0, false);
+  message.detections.clear();
+  const auto out = run_overlay({.width = 200, .height = 100}, {.data = message});
+  if (!out) return;
+  const auto& bytes = out->axes.tensor(holoscan::schema::ImageTensorFields::data).bytes();
+  VERIFY(bytes.size() == 200U * 100U * 4U);
+  VERIFY(std::all_of(bytes.begin(), bytes.end(), [](std::byte b) { return b == std::byte{0}; }));
 }
 
 // Detections without a capture time still reach Holoviz, which selects layers
 // by capture time: the overlay stamps them itself.
 void check_overlay_unstamped() {
-  auto h = holoscan::testing::create_operator_test<AprilTagOverlayOp>();
+  auto h = holoscan::testing::create_operator_test<AprilTagOverlayOp>(
+      AprilTagOverlayConfig{.width = 200, .height = 100});
   h.push("detections", one_tag_message(0, false));
-  h.capture_snapshot<holoscan::Tensor>("outlines");
+  h.capture_snapshot<holoscan::schema::ImageT>("axes");
   h.capture_snapshot<holoscan::Tensor>("labels");
   const auto result = h.run();
   VERIFY_MSG(result.ok(), result.describe_failure());
   if (!result.ok()) return;
   VERIFY_MSG(
-      result.snapshot<holoscan::Tensor>("outlines").sample_metadata().source_clock_id.valid(),
+      result.snapshot<holoscan::schema::ImageT>("axes").sample_metadata().source_clock_id.valid(),
       "unstamped detections give stamped layers");
 }
 #endif
@@ -439,8 +467,7 @@ int main() {
   using tag_detection::Backend;
   using tag_detection::testing::TestCase;
   std::vector<TestCase> cases;
-  for (Backend backend : tag_detection::available_backends()) {
-    const Backend run = backend == Backend::kVpi ? Backend::kVpiCpu : backend;
+  for (Backend run : tag_detection::available_backends()) {
     const std::string name(tag_detection::backend_name(run));
     for (const auto encoding :
          {holoscan::schema::ImageEncoding_MONO8, holoscan::schema::ImageEncoding_RGB8,
@@ -451,7 +478,7 @@ int main() {
     }
     cases.push_back({"detector " + name + " MONO8 as [height, width]", [=] {
                        tag_detection::check_detector(run, holoscan::schema::ImageEncoding_MONO8,
-                                                     {.rank2 = true});
+                                                     /*rank2=*/true);
                      }});
     cases.push_back({"detector " + name + " image size change",
                      [=] { tag_detection::check_size_change(run); }});
@@ -470,6 +497,8 @@ int main() {
   cases.push_back({"reporter counts", tag_detection::check_report_counts});
 #if APRILTAG_DETECTION_ENABLE_VISUALIZATION
   cases.push_back({"overlay layers", tag_detection::check_overlay});
+  cases.push_back({"overlay axes with a pose", tag_detection::check_overlay_pose});
+  cases.push_back({"overlay clears axes without tags", tag_detection::check_overlay_empty});
   cases.push_back({"overlay stamps unstamped detections", tag_detection::check_overlay_unstamped});
 #endif
   return tag_detection::testing::run(cases);
