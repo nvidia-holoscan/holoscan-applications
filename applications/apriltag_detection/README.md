@@ -9,8 +9,14 @@ backend's detections on a HoloViz display.
 
 ## Demo
 
-Videos of the application on synthetic input and on real input go in
-[tests/video](tests/video).
+- [Synthetic scene](tests/video/apriltag_synthetic.mp4) (12 s): four `tagStandard41h12` tags
+  moving in a rendered scene, detected by the `cuda` backend. Each tag is drawn with its X, Y and Z
+  axes in red, green and blue, and labelled with its ID and distance.
+- [Real video](tests/video/apriltag_real.mp4) (22 s): a phone recording of two printed
+  `tagStandard41h12` tags, each frame passed through `AprilTagDetectorOp` (`cuda`) and the overlay.
+  Without the phone camera's intrinsics there is no pose, so the axes lie in the image plane.
+
+Both are the frames Holoviz rendered, recorded one by one rather than captured from the screen.
 
 ## Backends
 
