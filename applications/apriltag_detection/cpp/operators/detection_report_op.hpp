@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// DetectionReportOp: the application's sink. Counts each frame's detections,
-// checks them against the synthetic scene's ground truth when the input is
-// synthetic, keeps latency statistics, and asks the run to complete once every
-// reporter has seen its expected frames.
+// DetectionReportOp: the application's sink. Counts detections and latencies,
+// checks synthetic input against ground truth, and requests completion once
+// every reporter has seen its expected frames.
 
 #pragma once
 
@@ -25,11 +24,6 @@
 #include "apriltag_detections_schema_traits.hpp"
 
 namespace tag_detection {
-
-// Shared by every reporter of a run; the last to finish requests completion.
-struct RunCompletion {
-  std::atomic<int> remaining{};
-};
 
 // One backend's results. Written by its reporter during the run and read by
 // main() after the run has stopped.
@@ -62,7 +56,8 @@ struct GroundTruth {
 
 struct DetectionReportConfig {
   std::shared_ptr<BackendReport> report;
-  std::shared_ptr<RunCompletion> completion;
+  // Reporters still running, shared by all of a run's; the last requests completion.
+  std::shared_ptr<std::atomic<int>> remaining;
   // Frames after which this reporter is done; 0 never finishes.
   std::uint32_t expected_frames{};
   std::optional<GroundTruth> truth;
@@ -75,7 +70,7 @@ inline constexpr double kMaxTranslationError = 0.03;
 
 class DetectionReportOp final : public holoscan::Operator<> {
  public:
-  // @throws std::invalid_argument if `report` or `completion` is missing.
+  // @throws std::invalid_argument if `report` or `remaining` is missing.
   explicit DetectionReportOp(DetectionReportConfig config);
 
   void setup(holoscan::OperatorSpec& spec) override;

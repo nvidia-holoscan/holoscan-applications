@@ -4,18 +4,8 @@
 #include "image_sources.hpp"
 
 #include <cuda_runtime_api.h>
-
-#if __has_include(<linux/videodev2.h>)
 #include <fcntl.h>
 #include <unistd.h>
-
-#include <linux/videodev2.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#define APRILTAG_DETECTION_HAS_V4L2 1
-#else
-#define APRILTAG_DETECTION_HAS_V4L2 0
-#endif
 
 #include <array>
 #include <cerrno>
@@ -31,9 +21,13 @@
 #include <holoscan/core/payload_options.hpp>
 #include <holoscan/core/tensor_contract.hpp>
 #include <holoscan/core/tensor_output_loan.hpp>
+// clang-format groups these Linux headers with the SDK's; cpplint wants them first.
+#include <linux/videodev2.h>  // NOLINT(build/include_order)
+#include <sys/ioctl.h>        // NOLINT(build/include_order)
+#include <sys/mman.h>         // NOLINT(build/include_order)
 
+#include "detector/pnm_image.hpp"
 #include "detector/synthetic_scene.hpp"
-#include "detector/tag_family.hpp"
 #include "detector/yuyv.hpp"
 
 namespace tag_detection {
@@ -41,27 +35,38 @@ namespace {
 
 constexpr DLDataType kUInt8{kDLUInt, 8U, 1U};
 
-holoscan::TensorOutputSpec image_tensor(holoscan::MemoryKind memory, std::uint64_t bytes) {
-  return holoscan::TensorOutputSpec{
-      .representation =
-          holoscan::TensorRepresentation{
-              .memory_kind = memory,
-              .dtype = kUInt8,
-              .rank = 3U,
-              .strides = holoscan::TensorStridePolicy::kContiguousOnly,
-          },
-      .bounds = holoscan::tensor_bounds(bytes),
-      .storage = holoscan::TensorOutputStorage::kRuntimePool,
-  };
+}  // namespace
+
+void image_output(holoscan::OperatorSpec& spec, holoscan::Output<holoscan::schema::ImageT>& image,
+                  const char* name, holoscan::MemoryKind memory, int width, int height,
+                  int channels) {
+  const std::uint64_t bytes = std::uint64_t{static_cast<std::uint32_t>(width)} * height *
+                              static_cast<std::uint32_t>(channels);
+  spec.output(image, name)
+      .produces_tensor(holoscan::TensorOutputSpec{
+          .representation =
+              holoscan::TensorRepresentation{
+                  .memory_kind = memory,
+                  .dtype = kUInt8,
+                  .rank = 3U,
+                  .strides = holoscan::TensorStridePolicy::kContiguousOnly,
+              },
+          .bounds = holoscan::tensor_bounds(bytes),
+          .storage = holoscan::TensorOutputStorage::kRuntimePool,
+      })
+      .payload_options(holoscan::PayloadOptions{
+          .schema = holoscan::schema_identity<holoscan::schema::ImageT>(),
+      });
 }
+
+namespace {
 
 holoscan::Error failure(std::string message) {
   return holoscan::Error{holoscan::ErrorCode::kFailure, std::move(message)};
 }
 
-// A consumer still busy with earlier frames makes the emit fail with
-// kBackpressured before anything is delivered. The source then sends the same
-// frame on its next tick instead of failing the run or skipping the frame.
+// A busy consumer fails the emit with kBackpressured before anything is
+// delivered: send the same frame again on the next tick.
 holoscan::expected<void, holoscan::Error> retry_if_backpressured(
     holoscan::expected<void, holoscan::Error> emitted, std::uint32_t& sent) {
   if (emitted) {
@@ -125,117 +130,73 @@ holoscan::expected<void, holoscan::Error> emit_image(
                             holoscan::EmitOptions{.capture_time = captured});
 }
 
-// Emits `pixels`, rows packed, through host memory or, with `device`, CUDA
-// device memory.
-holoscan::expected<void, holoscan::Error> emit_pixels(
-    holoscan::Output<holoscan::schema::ImageT>& output, holoscan::ExecutionContext& context,
-    const std::vector<std::uint8_t>& pixels, int width, int height, int channels, bool device) {
-  return emit_image(
-      output, context, width, height, channels,
-      [&pixels](std::uint8_t* out) { std::memcpy(out, pixels.data(), pixels.size()); },
-      device ? &pixels : nullptr, context.activation_time());
-}
-
 }  // namespace
 
-SyntheticTagSourceOp::SyntheticTagSourceOp(SyntheticSourceConfig config)
-    : config_(std::move(config)) {
-  if (!is_known_family(config_.family)) {
-    throw std::invalid_argument("unknown AprilTag family '" + config_.family + "'");
-  }
-  if (config_.width < 320 || config_.height < 240 || config_.width > 4096 ||
-      config_.height > 4096) {
-    throw std::invalid_argument("synthetic images must be 320x240 to 4096x4096");
+FrameSourceOp::FrameSourceOp(FrameSourceConfig config) : config_(std::move(config)) {
+  if (!config_.files.empty()) {
+    const PnmImage first = read_pnm(config_.files.front());
+    config_.width = first.width;
+    config_.height = first.height;
+    config_.count = static_cast<std::uint32_t>(config_.files.size());
+    channels_ = first.channels;
+  } else {
+    (void)make_scene(config_.family, 0, config_.width, config_.height);  // Family, minimum size.
+    if (config_.width > 4096 || config_.height > 4096) {
+      throw std::invalid_argument("synthetic images must be 320x240 to 4096x4096");
+    }
   }
   if (config_.count == 0 || config_.period <= std::chrono::nanoseconds::zero()) {
-    throw std::invalid_argument("synthetic source needs a positive count and period");
+    throw std::invalid_argument("frame source needs a positive count and period");
   }
 }
 
-void SyntheticTagSourceOp::setup(holoscan::OperatorSpec& spec) {
-  const std::uint64_t bytes =
-      std::uint64_t{static_cast<std::uint32_t>(config_.width)} * config_.height * 3U;
-  spec.output(image, "image")
-      .produces_tensor(image_tensor(
-          config_.device_output ? holoscan::MemoryKind::kCudaDevice : holoscan::MemoryKind::kHost,
-          bytes))
-      .payload_options(holoscan::PayloadOptions{
-          .schema = holoscan::schema_identity<holoscan::schema::ImageT>(),
-      });
+void FrameSourceOp::setup(holoscan::OperatorSpec& spec) {
+  image_output(
+      spec, image, "image",
+      config_.device_output ? holoscan::MemoryKind::kCudaDevice : holoscan::MemoryKind::kHost,
+      config_.width, config_.height, channels_);
 }
 
-holoscan::Contract SyntheticTagSourceOp::contract() const {
+holoscan::Contract FrameSourceOp::contract() const {
   holoscan::Contract result;
   result.trigger(holoscan::OnClock{.period = config_.period});
   return result;
 }
 
-void SyntheticTagSourceOp::start() { emitted_ = 0; }
+void FrameSourceOp::start() { emitted_ = 0; }
 
-holoscan::expected<void, holoscan::Error> SyntheticTagSourceOp::compute(
+holoscan::expected<void, holoscan::Error> FrameSourceOp::compute(
     holoscan::ExecutionContext& context) {
   if (emitted_ >= config_.count) {
     return {};  // Done: idle until the consumers request completion.
   }
-  const SyntheticScene scene = make_scene(config_.family, emitted_, config_.width, config_.height);
-  const std::vector<std::uint8_t> pixels = render_scene(scene, 3);
-  return retry_if_backpressured(
-      emit_pixels(image, context, pixels, config_.width, config_.height, 3, config_.device_output),
-      emitted_);
-}
-
-ImageFileSourceOp::ImageFileSourceOp(ImageFileSourceConfig config) : config_(std::move(config)) {
+  std::vector<std::uint8_t> pixels;
   if (config_.files.empty()) {
-    throw std::invalid_argument("image source needs at least one file");
-  }
-  if (config_.period <= std::chrono::nanoseconds::zero()) {
-    throw std::invalid_argument("image source needs a positive period");
-  }
-  first_ = read_pnm(config_.files.front());
-}
-
-void ImageFileSourceOp::setup(holoscan::OperatorSpec& spec) {
-  const std::uint64_t bytes =
-      std::uint64_t{static_cast<std::uint32_t>(first_.width)} * first_.height * first_.channels;
-  spec.output(image, "image")
-      .produces_tensor(image_tensor(holoscan::MemoryKind::kHost, bytes))
-      .payload_options(holoscan::PayloadOptions{
-          .schema = holoscan::schema_identity<holoscan::schema::ImageT>(),
-      });
-}
-
-holoscan::Contract ImageFileSourceOp::contract() const {
-  holoscan::Contract result;
-  result.trigger(holoscan::OnClock{.period = config_.period});
-  return result;
-}
-
-void ImageFileSourceOp::start() { emitted_ = 0; }
-
-holoscan::expected<void, holoscan::Error> ImageFileSourceOp::compute(
-    holoscan::ExecutionContext& context) {
-  if (emitted_ >= config_.files.size()) {
-    return {};
-  }
-  const auto& path = config_.files[emitted_];
-  PnmImage frame;
-  try {
-    frame = read_pnm(path);
-  } catch (const std::exception& error) {
-    return holoscan::make_unexpected(failure(error.what()));
-  }
-  if (frame.width != first_.width || frame.height != first_.height ||
-      frame.channels != first_.channels) {
-    return holoscan::make_unexpected(holoscan::Error{
-        holoscan::ErrorCode::kInvalidArgument,
-        path.string() + ": every image must match the first one's size and channels"});
+    pixels = render_scene(make_scene(config_.family, emitted_, config_.width, config_.height), 3);
+  } else {
+    const auto& path = config_.files[emitted_];
+    PnmImage frame;
+    try {
+      frame = read_pnm(path);
+    } catch (const std::exception& error) {
+      return holoscan::make_unexpected(failure(error.what()));
+    }
+    if (frame.width != config_.width || frame.height != config_.height ||
+        frame.channels != channels_) {
+      return holoscan::make_unexpected(holoscan::Error{
+          holoscan::ErrorCode::kInvalidArgument,
+          path.string() + ": every image must match the first one's size and channels"});
+    }
+    pixels = std::move(frame.pixels);
   }
   return retry_if_backpressured(
-      emit_pixels(image, context, frame.pixels, frame.width, frame.height, frame.channels, false),
+      emit_image(
+          image, context, config_.width, config_.height, channels_,
+          [&pixels](std::uint8_t* out) { std::memcpy(out, pixels.data(), pixels.size()); },
+          config_.device_output ? &pixels : nullptr, context.activation_time()),
       emitted_);
 }
 
-#if APRILTAG_DETECTION_HAS_V4L2
 namespace {
 
 int xioctl(int fd, std::uint64_t request, void* argument) {
@@ -311,11 +272,15 @@ CameraSourceOp::CameraSourceOp(CameraSourceConfig config) : config_(std::move(co
 
 CameraSourceOp::~CameraSourceOp() { release(); }
 
-void CameraSourceOp::release() noexcept {
+void CameraSourceOp::unmap() noexcept {
   for (const Mapping& buffer : buffers_) {
     munmap(buffer.data, buffer.length);
   }
   buffers_.clear();
+}
+
+void CameraSourceOp::release() noexcept {
+  unmap();
   if (fd_ >= 0) {
     close(fd_);
     fd_ = -1;
@@ -323,13 +288,7 @@ void CameraSourceOp::release() noexcept {
 }
 
 void CameraSourceOp::setup(holoscan::OperatorSpec& spec) {
-  const std::uint64_t bytes =
-      std::uint64_t{static_cast<std::uint32_t>(config_.width)} * config_.height * 3U;
-  spec.output(image, "image")
-      .produces_tensor(image_tensor(holoscan::MemoryKind::kHost, bytes))
-      .payload_options(holoscan::PayloadOptions{
-          .schema = holoscan::schema_identity<holoscan::schema::ImageT>(),
-      });
+  image_output(spec, image, "image", holoscan::MemoryKind::kHost, config_.width, config_.height, 3);
 }
 
 holoscan::Contract CameraSourceOp::contract() const {
@@ -375,10 +334,7 @@ void CameraSourceOp::start() {
 void CameraSourceOp::stop() {
   int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   xioctl(fd_, VIDIOC_STREAMOFF, &type);
-  for (const Mapping& buffer : buffers_) {
-    munmap(buffer.data, buffer.length);
-  }
-  buffers_.clear();
+  unmap();
   v4l2_requestbuffers request{};
   request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   request.memory = V4L2_MEMORY_MMAP;
@@ -435,25 +391,5 @@ holoscan::expected<void, holoscan::Error> CameraSourceOp::compute(
              ? holoscan::expected<void, holoscan::Error>{}
              : emitted;
 }
-
-#else  // No V4L2 on this platform.
-
-void check_camera(const CameraSourceConfig&) {
-  throw std::invalid_argument("the camera source needs Linux V4L2");
-}
-CameraSourceOp::CameraSourceOp(CameraSourceConfig config) : config_(std::move(config)) {
-  check_camera(config_);
-}
-CameraSourceOp::~CameraSourceOp() = default;
-void CameraSourceOp::release() noexcept {}
-void CameraSourceOp::setup(holoscan::OperatorSpec&) {}
-holoscan::Contract CameraSourceOp::contract() const { return {}; }
-void CameraSourceOp::start() {}
-void CameraSourceOp::stop() {}
-holoscan::expected<void, holoscan::Error> CameraSourceOp::compute(holoscan::ExecutionContext&) {
-  return {};
-}
-
-#endif
 
 }  // namespace tag_detection

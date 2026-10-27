@@ -12,7 +12,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <map>
 #include <memory>
 #include <random>
 #include <string>
@@ -83,46 +82,35 @@ Errors evaluate(Backend kind, const std::string& family, bool device_input) {
     const SyntheticScene scene = make_scene(family, frame, kWidth, kHeight);
     const auto gray = render_scene(scene, 1);
     const auto start = std::chrono::steady_clock::now();
-    const auto detections =
-        run_backend(*backend, gray, converter, stream, device_copy, device_input);
+    auto detections = run_backend(*backend, gray, converter, stream, device_copy, device_input);
     errors.detect_ms +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     ++errors.frames;
     errors.expected += static_cast<int>(scene.tags.size());
-    std::map<int, const SceneTag*> truth;
-    for (const SceneTag& tag : scene.tags) truth[tag.id] = &tag;
-    for (const Detection& detection : detections) {
-      const auto it = truth.find(detection.id);
-      if (it == truth.end()) {
-        ++errors.extra;
-        continue;
-      }
-      ++errors.found;
-      const auto expected = project_corners(*it->second, scene.intrinsics, scene.tag_size);
-      double worst = 0.0;
-      for (int i = 0; i < 4; ++i) {
-        const double e = std::hypot(detection.corners[i][0] - expected[i][0],
-                                    detection.corners[i][1] - expected[i][1]);
-        worst = std::max(worst, e);
-        errors.sum_corner_px += e;
-        ++errors.corners;
-      }
-      if (worst > 5.0) ++errors.wrong_order;
-      errors.max_corner_px = std::max(errors.max_corner_px, worst);
-      const auto pose = estimate_pose(detection, scene.intrinsics, scene.tag_size);
-      if (pose) {
-        const auto& t = it->second->pose.translation;
-        const double distance = std::hypot(t[0], t[1], t[2]);
-        const double dt = std::hypot(pose->translation[0] - t[0], pose->translation[1] - t[1],
-                                     pose->translation[2] - t[2]);
-        errors.max_translation_rel = std::max(errors.max_translation_rel, dt / distance);
-        errors.max_rotation_deg = std::max(
-            errors.max_rotation_deg, rotation_error_deg(pose->rotation, it->second->pose.rotation));
-      } else {
-        errors.max_translation_rel = HUGE_VAL;
-      }
-      truth.erase(it);  // A second report of one tag counts as extra.
+    for (Detection& detection : detections) {
+      detection.pose = estimate_pose(detection, scene.intrinsics, scene.tag_size);
     }
+    errors.extra +=
+        match_truth(scene, detections, [&errors](const TruthMatch& match) {
+          ++errors.found;
+          double worst = 0.0;
+          for (const double e : match.corner_errors) {
+            worst = std::max(worst, e);
+            errors.sum_corner_px += e;
+            ++errors.corners;
+          }
+          if (worst > 5.0) ++errors.wrong_order;
+          errors.max_corner_px = std::max(errors.max_corner_px, worst);
+          if (!match.translation_error) {
+            errors.max_translation_rel = HUGE_VAL;
+            return;
+          }
+          errors.max_translation_rel =
+              std::max(errors.max_translation_rel, *match.translation_error);
+          errors.max_rotation_deg =
+              std::max(errors.max_rotation_deg,
+                       rotation_error_deg(match.detection.pose->rotation, match.tag.pose.rotation));
+        }).extra;
   }
   cudaFree(device_copy);
   cudaStreamDestroy(stream);
@@ -265,15 +253,6 @@ void check_dense_edges() {
              std::to_string(found.size()) + " tags found after the stripes");
 }
 
-std::vector<Backend> backends_under_test() {
-  std::vector<Backend> backends;
-  for (Backend backend : available_backends()) {
-    // VPI on the CPU everywhere; its PVA path is exercised where present.
-    backends.push_back(backend == Backend::kVpi ? Backend::kVpiCpu : backend);
-  }
-  return backends;
-}
-
 }  // namespace
 }  // namespace tag_detection
 
@@ -281,7 +260,7 @@ int main() {
   using tag_detection::Backend;
   using tag_detection::testing::TestCase;
   std::vector<TestCase> cases;
-  for (Backend backend : tag_detection::backends_under_test()) {
+  for (Backend backend : tag_detection::available_backends()) {
     for (const char* family : {"tag36h11", "tagStandard41h12", "tag25h9"}) {
       for (bool device_input : {false, true}) {
         cases.push_back({std::string(tag_detection::backend_name(backend)) + " " + family +
@@ -290,7 +269,7 @@ int main() {
       }
     }
   }
-  for (Backend backend : tag_detection::backends_under_test()) {
+  for (Backend backend : tag_detection::available_backends()) {
     if (backend == Backend::kCpu) continue;
     cases.push_back({std::string(tag_detection::backend_name(backend)) + " tags cut by the edge",
                      [=] { tag_detection::check_edge_tags(backend); }});

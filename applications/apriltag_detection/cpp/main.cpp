@@ -1,19 +1,19 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Nitheesh Kumar. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// AprilTag Detection: images in, tag ids, corners and poses out, on a choice of
-// backends. One source (synthetic scenes, image files or a webcam) fans out to
-// one AprilTagDetectorOp per selected backend, so backends can be compared on
-// identical frames; each detector feeds a reporter, and the first optionally
-// draws on a Holoviz display.
+// AprilTag Detection: one source (synthetic scenes, image files or a webcam) fans
+// out to an AprilTagDetectorOp per backend, each feeding a reporter; the first
+// can also draw on a Holoviz display.
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -91,14 +91,17 @@ bool parse_bool(std::string_view value, std::string_view option) {
 }
 
 template <typename T>
-T parse_number(std::string_view value, std::string_view option) {
-  T result{};
+void parse_number(std::string_view value, std::string_view option, T& result) {
   const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), result);
   if (error != std::errc() || end != value.data() + value.size()) {
     throw std::invalid_argument(std::string(option) + " requires a number, got '" +
                                 std::string(value) + "'");
   }
-  return result;
+}
+
+template <typename T>
+void parse_number(std::string_view value, std::string_view option, std::optional<T>& result) {
+  parse_number(value, option, result.emplace());
 }
 
 std::vector<td::Backend> parse_backends(std::string_view value) {
@@ -112,7 +115,7 @@ std::vector<td::Backend> parse_backends(std::string_view value) {
     const auto backend = td::parse_backend(name);
     if (!backend) {
       throw std::invalid_argument("unknown backend '" + std::string(name) +
-                                  "'; use cpu, cuda, vpi, vpi-pva, vpi-cpu or all");
+                                  "'; use cpu, cuda, vpi or all");
     }
     if (std::find(backends.begin(), backends.end(), *backend) != backends.end()) {
       throw std::invalid_argument("backend '" + std::string(name) + "' is listed twice");
@@ -129,6 +132,57 @@ std::vector<td::Backend> parse_backends(std::string_view value) {
 Options parse_args(int argc, char** argv) {
   Options opts;
   std::optional<double> fx, fy, cx, cy;
+  using Parse = std::function<void(std::string_view value, std::string_view option)>;
+  const auto number = [](auto& target) -> Parse {
+    return [&target](std::string_view value, std::string_view option) {
+      parse_number(value, option, target);
+    };
+  };
+  const auto flag = [](bool& target) -> Parse {
+    return [&target](std::string_view value, std::string_view option) {
+      target = parse_bool(value, option);
+    };
+  };
+  const std::pair<std::string_view, Parse> kOptions[] = {
+      {"--source",
+       [&](std::string_view value, std::string_view) {
+         if (value == "synthetic") {
+           opts.source = Source::kSynthetic;
+         } else if (value == "images") {
+           opts.source = Source::kImages;
+         } else if (value == "camera") {
+           opts.source = Source::kCamera;
+         } else {
+           throw std::invalid_argument("--source must be synthetic, images or camera");
+         }
+       }},
+      {"--images", [&](std::string_view value, std::string_view) { opts.images = value; }},
+      {"--device", [&](std::string_view value, std::string_view) { opts.device = value; }},
+      {"--backend",
+       [&](std::string_view value, std::string_view) { opts.backends = parse_backends(value); }},
+      {"--family", [&](std::string_view value, std::string_view) { opts.detector.family = value; }},
+      {"--tag-size", number(opts.tag_size)},
+      {"--fx", number(fx)},
+      {"--fy", number(fy)},
+      {"--cx", number(cx)},
+      {"--cy", number(cy)},
+      {"--decimate", number(opts.detector.decimate)},
+      {"--max-hamming", number(opts.detector.max_hamming)},
+      {"--refine-edges", flag(opts.detector.refine_edges)},
+      {"--sharpening", number(opts.detector.decode_sharpening)},
+      {"--width", number(opts.width)},
+      {"--height", number(opts.height)},
+      {"--count", number(opts.count)},
+      {"--period-ms", number(opts.period_ms)},
+      {"--device-input", flag(opts.device_input)},
+      {"--display",
+       [&](std::string_view value, std::string_view option) {
+         opts.display = value == "auto"             ? DisplayMode::kAuto
+                        : parse_bool(value, option) ? DisplayMode::kOn
+                                                    : DisplayMode::kOff;
+       }},
+      {"--compile-only", flag(opts.compile_only)},
+  };
   for (int i = 1; i < argc; ++i) {
     const std::string_view option{argv[i]};
     if (option == "--help" || option == "-h") {
@@ -138,64 +192,12 @@ Options parse_args(int argc, char** argv) {
     if (i + 1 >= argc) {
       throw std::invalid_argument("missing value for " + std::string(option));
     }
-    const std::string_view value{argv[++i]};
-    if (option == "--source") {
-      if (value == "synthetic") {
-        opts.source = Source::kSynthetic;
-      } else if (value == "images") {
-        opts.source = Source::kImages;
-      } else if (value == "camera") {
-        opts.source = Source::kCamera;
-      } else {
-        throw std::invalid_argument("--source must be synthetic, images or camera");
-      }
-    } else if (option == "--images") {
-      opts.images = value;
-    } else if (option == "--device") {
-      opts.device = value;
-    } else if (option == "--backend") {
-      opts.backends = parse_backends(value);
-    } else if (option == "--family") {
-      opts.detector.family = value;
-    } else if (option == "--tag-size") {
-      opts.tag_size = parse_number<double>(value, option);
-    } else if (option == "--fx") {
-      fx = parse_number<double>(value, option);
-    } else if (option == "--fy") {
-      fy = parse_number<double>(value, option);
-    } else if (option == "--cx") {
-      cx = parse_number<double>(value, option);
-    } else if (option == "--cy") {
-      cy = parse_number<double>(value, option);
-    } else if (option == "--decimate") {
-      opts.detector.decimate = parse_number<int>(value, option);
-    } else if (option == "--max-hamming") {
-      opts.detector.max_hamming = parse_number<int>(value, option);
-    } else if (option == "--refine-edges") {
-      opts.detector.refine_edges = parse_bool(value, option);
-    } else if (option == "--sharpening") {
-      opts.detector.decode_sharpening = parse_number<double>(value, option);
-    } else if (option == "--threads") {
-      opts.detector.cpu_threads = parse_number<int>(value, option);
-    } else if (option == "--width") {
-      opts.width = parse_number<int>(value, option);
-    } else if (option == "--height") {
-      opts.height = parse_number<int>(value, option);
-    } else if (option == "--count") {
-      opts.count = parse_number<std::uint32_t>(value, option);
-    } else if (option == "--period-ms") {
-      opts.period_ms = parse_number<std::uint32_t>(value, option);
-    } else if (option == "--device-input") {
-      opts.device_input = parse_bool(value, option);
-    } else if (option == "--display") {
-      opts.display = value == "auto"             ? DisplayMode::kAuto
-                     : parse_bool(value, option) ? DisplayMode::kOn
-                                                 : DisplayMode::kOff;
-    } else if (option == "--compile-only") {
-      opts.compile_only = parse_bool(value, option);
-    } else {
+    const auto* entry = std::find_if(std::begin(kOptions), std::end(kOptions),
+                                     [option](const auto& known) { return known.first == option; });
+    if (entry == std::end(kOptions)) {
       throw std::invalid_argument("unknown option: " + std::string(option));
     }
+    entry->second(argv[++i], option);
   }
   const int given = fx.has_value() + fy.has_value() + cx.has_value() + cy.has_value();
   if (given != 0 && given != 4) {
@@ -227,14 +229,13 @@ void usage(const char* argv0) {
          "                             the camera offers (default: 640x480)\n"
          "  --device-input true|false  Synthetic frames in GPU memory (default: false)\n"
          "Detection:\n"
-         "  --backend LIST             Comma-separated: cpu, cuda, vpi, vpi-pva, vpi-cpu, or\n"
-         "                             all compiled backends (default: cuda)\n"
+         "  --backend LIST             Comma-separated: cpu, cuda, vpi, or all compiled\n"
+         "                             backends (default: cuda)\n"
          "  --family NAME              AprilTag family (default: tag36h11)\n"
          "  --max-hamming N            Bit errors to correct, 0..2 (default: 1)\n"
          "  --decimate N               Detect quads at 1/N resolution, 1..8 (default: 2)\n"
          "  --refine-edges true|false  Refine edges at full resolution (default: true)\n"
          "  --sharpening X             Bit sharpening, 0..1 (default: 0.25)\n"
-         "  --threads N                CPU backend worker threads (default: 1)\n"
          "Pose (--source images or camera; synthetic scenes provide their own):\n"
          "  --fx F --fy F --cx C --cy C  Camera intrinsics in pixels\n"
          "  --tag-size M               Black-border width in meters (default: 0.12)\n"
@@ -269,7 +270,6 @@ void validate(Options& opts) {
     opts.width = opts.width.value_or(1280);
     opts.height = opts.height.value_or(720);
     opts.count = opts.count.value_or(300);
-    // The synthetic scene's own camera and tags.
     const td::SyntheticScene scene =
         td::make_scene(opts.detector.family, 0, *opts.width, *opts.height);
     opts.intrinsics = scene.intrinsics;
@@ -336,23 +336,21 @@ int execute(const Options& opts, SignalDomain& signals) {
   int image_height = opts.height.value_or(0);
   int image_channels = 3;
   const holoscan::Output<holoscan::schema::ImageT>* source_output = nullptr;
-  if (opts.source == Source::kSynthetic) {
-    auto source = graph.op<td::SyntheticTagSourceOp>(
-        "source", td::SyntheticSourceConfig{.width = image_width,
-                                            .height = image_height,
-                                            .family = opts.detector.family,
-                                            .count = frames,
-                                            .period = period,
-                                            .device_output = opts.device_input});
-    source_output = &source->image;
-  } else if (opts.source == Source::kImages) {
-    auto files = td::list_pnm_files(opts.images);
-    frames = static_cast<std::uint32_t>(files.size());
-    auto source = graph.op<td::ImageFileSourceOp>(
-        "source", td::ImageFileSourceConfig{.files = std::move(files), .period = period});
-    image_width = source->first().width;
-    image_height = source->first().height;
-    image_channels = source->first().channels;
+  if (opts.source != Source::kCamera) {
+    td::FrameSourceConfig config{.family = opts.detector.family,
+                                 .width = image_width,
+                                 .height = image_height,
+                                 .count = frames,
+                                 .period = period,
+                                 .device_output = opts.device_input};
+    if (opts.source == Source::kImages) {
+      config.files = td::list_pnm_files(opts.images);
+      frames = static_cast<std::uint32_t>(config.files.size());
+    }
+    auto source = graph.op<td::FrameSourceOp>("source", std::move(config));
+    image_width = source->width();
+    image_height = source->height();
+    image_channels = source->channels();
     source_output = &source->image;
   } else {
     auto source = graph.op<td::CameraSourceOp>(
@@ -376,12 +374,10 @@ int execute(const Options& opts, SignalDomain& signals) {
         "--display false");
   }
 
-  // Lossless edges: every detector sees every frame, in order, so reporters can
-  // match frame numbers to the synthetic ground truth.
+  // Lossless edges: every detector sees every frame, in order, for the ground truth.
   const holoscan::ConnectionOptions lossless{.queue_policy = holoscan::QueuePolicy::kBlocking,
                                              .queue_depth = 2U};
-  auto completion = std::make_shared<td::RunCompletion>();
-  completion->remaining = static_cast<int>(opts.backends.size());
+  auto remaining = std::make_shared<std::atomic<int>>(static_cast<int>(opts.backends.size()));
   std::vector<std::shared_ptr<td::BackendReport>> reports;
   std::optional<holoscan::OperatorHandle<td::AprilTagDetectorOp>> first_detector;
   for (const td::Backend backend : opts.backends) {
@@ -401,7 +397,7 @@ int execute(const Options& opts, SignalDomain& signals) {
     auto reporter = graph.op<td::DetectionReportOp>(
         "report_" + name,
         td::DetectionReportConfig{
-            .report = report, .completion = completion, .expected_frames = frames, .truth = truth});
+            .report = report, .remaining = remaining, .expected_frames = frames, .truth = truth});
     graph.add_flow(*source_output, detector->image, lossless);
     graph.add_flow(detector->detections, reporter->detections, lossless);
     if (!first_detector) {
@@ -418,19 +414,17 @@ int execute(const Options& opts, SignalDomain& signals) {
                                                                    : viz::ImageFormat::kR8G8B8Unorm,
                                      .max_width = static_cast<std::uint32_t>(image_width),
                                      .max_height = static_cast<std::uint32_t>(image_height)});
-    layers.add_geometry_layer(
-        "outlines", viz::GeometryLayerDesc{
-                        .topologies = {viz::GeometryTopology::kLineList},
-                        .max_primitives = static_cast<std::uint32_t>(td::kMaxDetectionsPerFrame) *
-                                          td::kOverlayLinesPerTag,
-                        .default_line_width = 8.0F});
+    // Holoviz blends RGBA image layers by their alpha, so the axes go over the video.
+    layers.add_image_layer(
+        "axes", viz::ImageLayerDesc{.format = viz::ImageFormat::kR8G8B8A8Unorm,
+                                    .max_width = static_cast<std::uint32_t>(image_width),
+                                    .max_height = static_cast<std::uint32_t>(image_height)});
     layers.add_text_layer(
         "labels", viz::TextLayerDesc{.max_glyphs = static_cast<std::uint32_t>(
                                          td::kMaxDetectionsPerFrame * td::kOverlayLabelBytes),
                                      .normalized_coordinates = true});
-    // A frame is drawn when its outlines arrive, over the newest image: the
-    // image they were detected in, since the next one comes a period later.
-    // Triggering on the image would draw the previous frame's outlines over it.
+    // Draw when the axes arrive, over the newest image, which is theirs;
+    // triggering on the image would draw the previous frame's axes.
     const auto max_input_age = std::max(4 * period, std::chrono::milliseconds{250});
     auto visualizer = graph.op<viz::HolovizOp>(
         "holoviz", std::move(layers),
@@ -439,14 +433,17 @@ int execute(const Options& opts, SignalDomain& signals) {
                             .width = static_cast<std::uint32_t>(image_width),
                             .height = static_cast<std::uint32_t>(image_height)},
         viz::FrameTrigger{viz::LayerTrigger{1}}, max_input_age);
-    // The display is best effort: it keeps the newest sample and never holds
-    // back the detectors.
+    // Best effort: the display keeps the newest sample and never holds back the detectors.
     const holoscan::ConnectionOptions latest{.queue_policy = holoscan::QueuePolicy::kDropOldest,
                                              .queue_depth = 1U};
-    auto overlay = graph.op<td::AprilTagOverlayOp>("overlay");
+    auto overlay = graph.op<td::AprilTagOverlayOp>(
+        "overlay", td::AprilTagOverlayConfig{.width = image_width,
+                                             .height = image_height,
+                                             .intrinsics = opts.intrinsics,
+                                             .tag_size = opts.tag_size});
     graph.add_flow(*source_output, visualizer->image_layer_input(0), latest);
     graph.add_flow((*first_detector)->detections, overlay->detections, latest);
-    graph.add_flow(overlay->outlines, visualizer->tensor_layer_input(1), latest);
+    graph.add_flow(overlay->axes, visualizer->image_layer_input(1), latest);
     graph.add_flow(overlay->labels, visualizer->tensor_layer_input(2), latest);
   }
 #else
@@ -473,8 +470,7 @@ int execute(const Options& opts, SignalDomain& signals) {
     return 0;
   }
   if (!signals) {
-    // Profilers, sanitizers and preloaded libraries can start a thread before
-    // main(); the SDK then refuses to take over SIGINT and SIGTERM.
+    // A thread started before main() (profilers, sanitizers) makes the SDK refuse.
     std::cerr << kAppName << ": warning: running without managed SIGINT/SIGTERM handling: "
               << holoscan::runtime_error_message(signals.error());
     if (signals.error().code == holoscan::ErrorCode::kInvalidArgument) {
@@ -496,9 +492,8 @@ int execute(const Options& opts, SignalDomain& signals) {
   }
   session.wait();
   const holoscan::RunTermination termination = session.termination();
-  // The SDK logs a failed run's diagnostics itself, unless its report or its
-  // logger is turned down; show those of any other run, such as the warning a
-  // stop request leaves.
+  // The SDK logs a failed run's diagnostics itself unless its report or logger is
+  // turned down; show any other run's, such as a stop request's warning.
   const bool sdk_reported = termination == holoscan::RunTermination::kFailed &&
                             holoscan::automatic_diagnostic_logging_enabled() &&
                             holoscan::log_level() <= holoscan::LogLevel::ERROR;
@@ -512,9 +507,8 @@ int execute(const Options& opts, SignalDomain& signals) {
     }
   }
 
-  // A stop request (SIGINT, SIGTERM, a closed window) ends the run early; that
-  // is not a detection failure, but not a pass either. For a live camera it is
-  // the normal end.
+  // A stop request (SIGINT, SIGTERM, a closed window) is neither a pass nor a
+  // detection failure; for a live camera it is the normal end.
   const bool stopped = !timed_out && termination == holoscan::RunTermination::kStopped;
   bool passed = !timed_out && session.diagnostics().empty() &&
                 termination == holoscan::RunTermination::kRequestedCompleted;
@@ -529,9 +523,7 @@ int execute(const Options& opts, SignalDomain& signals) {
 }  // namespace
 
 int main(int argc, char** argv) try {
-  // Take over SIGINT and SIGTERM while this is the only thread: validating the
-  // options can start VPI's worker threads, and the SDK refuses a process that
-  // already runs other threads.
+  // Take over SIGINT and SIGTERM first: the SDK refuses once other threads run.
   SignalDomain signals = holoscan::ManagedShutdownSignals::create();
   auto opts = parse_args(argc, argv);
   if (opts.help) {

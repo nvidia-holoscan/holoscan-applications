@@ -5,10 +5,7 @@
 # its combined output matches EXPECT_OUTPUT. CTest's own PASS_REGULAR_EXPRESSION
 # would ignore the exit status.
 #
-#   cmake -DEXPECT_EXIT=2 -DEXPECT_OUTPUT=regex [-DMAKE_DIRECTORY=dir]
-#         -P run_and_match.cmake -- command [args...]
-#
-# MAKE_DIRECTORY is created first, for a test that needs one in its way.
+#   cmake -DEXPECT_EXIT=2 -DEXPECT_OUTPUT=regex -P run_and_match.cmake -- command [args...]
 
 if(NOT DEFINED EXPECT_EXIT)
   set(EXPECT_EXIT 0)
@@ -29,10 +26,6 @@ foreach(_index RANGE ${_last})
 endforeach()
 if(NOT _command)
   message(FATAL_ERROR "run_and_match: no command after --")
-endif()
-
-if(DEFINED MAKE_DIRECTORY)
-  file(MAKE_DIRECTORY "${MAKE_DIRECTORY}")
 endif()
 
 execute_process(COMMAND ${_command}

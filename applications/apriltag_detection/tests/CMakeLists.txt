@@ -10,8 +10,6 @@ target_link_libraries(apriltag_backend_accuracy_test PRIVATE apriltag_detection_
 add_executable(apriltag_operator_test operator_test.cpp)
 target_link_libraries(apriltag_operator_test PRIVATE
   apriltag_detection_operators holoscan::testing)
-target_compile_definitions(apriltag_operator_test PRIVATE
-  APRILTAG_DETECTION_ENABLE_VISUALIZATION=$<BOOL:${APRILTAG_DETECTION_ENABLE_VISUALIZATION}>)
 
 add_executable(apriltag_write_test_frames write_test_frames.cpp)
 target_link_libraries(apriltag_write_test_frames PRIVATE apriltag_detection_core)
@@ -37,8 +35,6 @@ apriltag_app_test(apriltag_app_synthetic 0 "verdict=PASS"
   --backend all --count 30 --period-ms 10 --display false)
 apriltag_app_test(apriltag_app_device_input 0 "verdict=PASS"
   --backend all --count 20 --period-ms 10 --device-input true --display false)
-apriltag_app_test(apriltag_app_family 0 "verdict=PASS"
-  --backend all --count 10 --period-ms 10 --family tagStandard41h12 --display false)
 
 # A folder of images: gray and color frames written by the fixture, then read
 # back with explicit intrinsics.
