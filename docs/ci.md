@@ -177,7 +177,7 @@ Self-hosted runners need Actions Runner v2.327.1 or newer for the workflow's
 Node.js 24 actions (see the [checkout requirements](https://github.com/actions/checkout/tree/v7.0.1#checkout-v5)).
 Runners also need Docker with NVIDIA Container Toolkit and access to the configured
 image. Prefer ephemeral runners. The image must expose its SDK through
-`HOLOSCAN_SDK_ROOT` or the CLI's standard `/opt/nvidia/holoscan` location, and
+`HOLOSCAN_SDK_ROOT` or the CLI's default `/usr` location, and
 support application execution as the runner's numeric UID/GID. The container's
 `HOME` is the mounted workspace, so compiler, CMake, and CUDA caches land in
 ignored workspace directories instead of an unwritable default home. It must support
