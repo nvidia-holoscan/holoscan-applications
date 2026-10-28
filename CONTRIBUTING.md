@@ -119,6 +119,36 @@ README before the relevant step and update the
 Report vulnerabilities through [SECURITY.md](SECURITY.md#reporting-a-vulnerability)
 instead of opening a public issue or pull request.
 
+## Squash merging (maintainers)
+
+Use **Actions → Squash merge with bot assistance → Run workflow** on `main`,
+enter the PR number, and run it when the PR is approved and its checks pass.
+This performs the squash merge using GitHub's default message, replacing only
+bot `Co-authored-by:` prefixes with `Assisted-by:`. Human co-authors, sign-offs,
+and the rest of the message stay unchanged. It does not modify the standard
+**Squash and merge** button.
+
+Detection recognizes `[bot]` identities, GitHub noreply accounts whose account
+type is `Bot`, and the AI addresses `noreply@anthropic.com` and
+`noreply@openai.com`. Other identities are preserved; names alone are not used
+to guess whether someone is a bot. Merge queues are not supported because they
+do not preserve a custom merge message.
+
+One-time setup: install a dedicated GitHub App on this repository with
+**Contents: write** and **Pull requests: read**. Also grant **Workflows: write**
+if it will merge PRs that change workflows. Store its App ID as repository
+variable `MERGE_APP_ID` and its private key as secret `MERGE_APP_PRIVATE_KEY`.
+Keep the App subject to the existing review and check requirements, without
+rule-bypass access. An App token allows the merge to trigger normal CI on
+`main`; the workflow does not fall back to `GITHUB_TOKEN`.
+See [GitHub's App authentication setup](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow).
+
+To preview without merging, authenticate `gh` and run:
+
+```bash
+python3 .github/scripts/squash_merge.py --repo nvidia-holoscan/holoscan-applications --pr 123
+```
+
 ## Sign off your commits
 
 Every contribution commit must include a `Signed-off-by` trailer. Add it with:
