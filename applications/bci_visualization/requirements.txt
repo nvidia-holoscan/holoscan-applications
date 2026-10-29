@@ -1,0 +1,8 @@
+# Holoscan SDK 5 Python Core and the application's Python dependencies.
+holoscan-core-cu13==5.0.0
+cupy-cuda13x==14.2.0
+numpy==2.3.3
+scipy==1.16.3
+h5py==3.15.1
+nibabel==5.3.2
+vtk==9.7.1
