@@ -1,0 +1,48 @@
+{
+  "application": {
+    "name": "Surgical De-identification (In-Body / Out-of-Body Classifier)",
+    "description": "Binary in-body / out-of-body surgical-video classifier used as a de-identification pre-filter. Pipeline: VideoFileReaderOp (FFmpeg decode) -> TensorPreprocessorOp (NPP resize + normalize) -> InferenceOp (TensorRT de_id.onnx) -> ClassificationPrinterOp (stdout).",
+    "authors": [
+      { "name": "Holoscan Team", "affiliation": "NVIDIA" }
+    ],
+    "language": "C++",
+    "version": "1.0.0",
+    "changelog": {
+      "1.0.0": "Port from Holohub surgical_deidentification app to holoscan-applications."
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "5.0.0",
+      "tested_versions": ["5.0.0"]
+    },
+    "platforms": ["x86_64", "aarch64"],
+    "tags": ["Inference", "Classifier", "Surgical", "De-ID", "Video"],
+    "ranking": 2,
+    "requirements": {
+      "apt": [
+        "libavformat-dev",
+        "libavcodec-dev",
+        "libavutil-dev",
+        "libswscale-dev",
+        "libyaml-cpp-dev"
+      ],
+      "data": [
+        {
+          "name": "Endoscopy out-of-body detection sample",
+          "description": "ONNX model and sample MP4 used by the stock config.yaml.",
+          "url": "https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara-holoscan/resources/endoscopy_out_of_body_detection",
+          "version": "20230127"
+        }
+      ]
+    },
+    "default_mode": "classify",
+    "modes": {
+      "classify": {
+        "description": "Run the full classifier pipeline against the mounted dataset.",
+        "run": {
+          "command": "\"<holohub_app_bin>/de_id\" --config \"<holohub_app_bin>/config.yaml\"",
+          "workdir": "holohub_app_bin"
+        }
+      }
+    }
+  }
+}

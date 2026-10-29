@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+inference:
+  model_path_map:
+    de_id: @ENDOSCOPY_MODEL_ONNX_PATH@
+  input_map:
+    de_id: [de_id_preprocessed]
+  output_map:
+    de_id: [de_id_inferred]
+  backend: trt
+  input_on_cuda: true
+  output_on_cuda: true
+  transmit_on_cuda: true
+  parallel_inference: false
+  is_engine_path: false
+  enable_fp16: true
+  enable_cuda_graphs: false
+
+video_source:
+  path: @ENDOSCOPY_SAMPLE_MP4_PATH@
+  tensor_port_name: raw_frame
+  output_pix_fmt: rgb24
+  output_layout: nhwc
+  prepend_batch_dim: false
+  memory_kind: cuda_device
+  frame_count: 10
+  frame_rate: 0
+  loop: false
+
+preprocessor:
+  input_port_name: raw_frame
+  output_port_name: de_id_preprocessed
+  output_width: 256
+  output_height: 256
+  output_pix_fmt: rgb_fp32
+  output_layout: nchw
+  prepend_batch_dim: true
+  normalize_mean: [0.0, 0.0, 0.0]
+  normalize_std: [1.0, 1.0, 1.0]
+  memory_kind: cuda_device

@@ -1,0 +1,22 @@
+{
+    "operator": {
+        "name": "VideoFileReaderOp",
+        "description": "FFmpeg-backed decoder operator. Reads an .mp4 (or any libavformat-supported container) frame-by-frame on the CPU, uploads each decoded frame to device memory, and emits it as a holoscan::Tensor in uint8 HWC RGB layout.",
+        "authors": [
+            { "name": "HoloHub Team", "affiliation": "NVIDIA" }
+        ],
+        "version": "1.0",
+        "changelog": { "1.0": "Initial Release" },
+        "language": ["C++"],
+        "holoscan_sdk": {
+            "minimum_required_version": "5.0.0",
+            "tested_versions": ["5.0.0"]
+        },
+        "platforms": ["x86_64", "aarch64"],
+        "tags": ["Video", "Reader", "FFmpeg"],
+        "ranking": 3,
+        "requirements": {
+            "apt": ["libavformat-dev", "libavcodec-dev", "libavutil-dev", "libswscale-dev"]
+        }
+    }
+}

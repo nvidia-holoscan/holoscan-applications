@@ -1,0 +1,22 @@
+{
+    "operator": {
+        "name": "VideoFileWriterOp",
+        "description": "FFmpeg-backed encoder operator. Consumes holoscan::Tensor frames (uint8 HWC RGB) and writes them to an .mp4 (or any libavformat-supported container) via libavcodec.",
+        "authors": [
+            { "name": "HoloHub Team", "affiliation": "NVIDIA" }
+        ],
+        "version": "1.0",
+        "changelog": { "1.0": "Initial Release" },
+        "language": ["C++"],
+        "holoscan_sdk": {
+            "minimum_required_version": "5.0.0",
+            "tested_versions": ["5.0.0"]
+        },
+        "platforms": ["x86_64", "aarch64"],
+        "tags": ["Video", "Writer", "FFmpeg"],
+        "ranking": 3,
+        "requirements": {
+            "apt": ["libavformat-dev", "libavcodec-dev", "libavutil-dev", "libswscale-dev"]
+        }
+    }
+}
