@@ -78,17 +78,23 @@ class BuildRHSOperator(hs.Operator):
     def _get_channel_indices(self, optode_order: list[tuple[int, int, int, int]]) -> list[int]:
         """Map optode tuples to jacobian channel indices (CPU-side dict lookups)."""
         indices: list[int] = []
+        missing: list[tuple[int, int, int, int]] = []
         for src_module, src, det_module, det in optode_order:
             try:
                 srcs = self._channel_mapping[str(src_module)]
                 detectors = srcs[str(src)][str(det_module)]
                 jacobian_index = detectors[str(det)]
-            except KeyError as e:
-                raise ValueError(
-                    "Channel without jacobian mapping "
-                    f"(src_module={src_module}, src={src}, det_module={det_module}, det={det})"
-                ) from e
+            except KeyError:
+                missing.append((int(src_module), int(src), int(det_module), int(det)))
+                continue
             indices.append(int(jacobian_index))
+        if missing:
+            raise ValueError(
+                f"{len(missing)} of {len(optode_order)} channels have no Jacobian mapping, "
+                f"for example (source module, source, detector module, detector) "
+                f"{', '.join(map(str, missing[:5]))}. Prepare the assets for this headset "
+                "with prepare_data.py --headset."
+            )
         if not indices:
             raise ValueError("Empty channel mapping; no channels resolved to jacobian indices")
         return indices

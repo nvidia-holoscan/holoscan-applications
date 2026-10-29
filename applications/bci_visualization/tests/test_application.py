@@ -41,6 +41,12 @@ class ApplicationTest(unittest.TestCase):
     def test_synthetic_replay_renders_volumes(self) -> None:
         self._check_render(["--replay-rate", "realtime"])
 
+    def test_simulated_headset_renders_volumes(self) -> None:
+        self._check_render(["--source", "kernel", "--simulate-device"])
+
+    def test_simulated_headset_stops_at_eof_without_a_frame_limit(self) -> None:
+        self._check_render(["--source", "kernel", "--simulate-device", "--frames", "0"])
+
     def test_renders_and_finishes_with_old_capture_timestamps(self) -> None:
         for view in ("surface", "volume"):
             with self.subTest(view=view):

@@ -24,7 +24,7 @@ from operators.reconstruction import (
     RegularizedSolverOperator,
 )
 from operators.reconstruction.solver_operator import REG_DEFAULT
-from operators.stream import REPLAY_RATES, StreamOperator
+from operators.stream import REPLAY_RATES, SOURCES, StreamOperator
 from operators.voxel_stream_to_volume import VoxelStreamToVolumeOp
 from operators.vtk_volume_view import VTKVolumeViewOp
 
@@ -56,6 +56,18 @@ def parse_arguments(arguments=None):
     parser.add_argument("--data", type=Path, default=Path(default_data), help="data directory")
     parser.add_argument(
         "--synthetic", action="store_true", help="replay generated data instead of --data"
+    )
+    parser.add_argument(
+        "--source",
+        choices=SOURCES,
+        default="snirf",
+        help="'snirf' replays the recording; 'kernel' streams from a Kernel Flow headset",
+    )
+    parser.add_argument(
+        "--simulate-device",
+        action="store_true",
+        help="with --source kernel, stream the recording through the Kernel SDK path at its "
+        "recorded rate instead of from a headset",
     )
     parser.add_argument(
         "--replay-rate",
@@ -96,6 +108,10 @@ def parse_arguments(arguments=None):
     args = parser.parse_args(arguments)
     if args.frames < 0:
         parser.error("--frames must be non-negative")
+    if args.simulate_device and args.source != "kernel":
+        parser.error("--simulate-device needs --source kernel")
+    if args.synthetic and args.source == "kernel" and not args.simulate_device:
+        parser.error("--synthetic with --source kernel needs --simulate-device")
     if not 1 <= args.render_hz <= 240:
         parser.error("--render-hz must be between 1 and 240")
     if args.surface_depth_mm <= 0:
@@ -110,6 +126,13 @@ def replay_length(snirf_path: Path, frames: int) -> int:
     return min(frames, total) if frames else total
 
 
+def last_frame(args, data_dir: Path) -> int:
+    """Return the frame id of the last sample, or -1 if the stream has no end."""
+    if args.source == "snirf" or args.simulate_device:
+        return replay_length(data_dir / "data.snirf", args.frames) - 1
+    return args.frames - 1
+
+
 def build_graph(args, data_dir: Path) -> hs.Graph:
     """Compose the replay, reconstruction, and visualization pipeline."""
     graph = hs.Graph("bci_visualization", default_clock=hs.RealtimeClock)
@@ -119,6 +142,9 @@ def build_graph(args, data_dir: Path) -> hs.Graph:
         snirf_path=str(data_dir / "data.snirf"),
         replay_rate=args.replay_rate,
         max_samples=args.frames,
+        source=args.source,
+        simulate_device=args.simulate_device,
+        final_frame=last_frame(args, data_dir),
     )
     build_rhs = graph.op(BuildRHSOperator, "build_rhs", data_dir=str(data_dir))
     normalize = graph.op(NormalizeOperator, "normalize")
@@ -143,7 +169,7 @@ def build_graph(args, data_dir: Path) -> hs.Graph:
         surface_depth_mm=args.surface_depth_mm,
         surface_texture=args.surface_texture,
         stop_at_last_frame=args.frames > 0,
-        last_frame=replay_length(data_dir / "data.snirf", args.frames) - 1,
+        last_frame=last_frame(args, data_dir),
     )
 
     graph.add_flow(stream.samples, build_rhs.moments, queue_depth=2)
@@ -160,7 +186,10 @@ def build_graph(args, data_dir: Path) -> hs.Graph:
 
 def run(args, data_dir: Path) -> int:
     """Compile and run the graph, then print a summary."""
-    missing = [name for name in REQUIRED_FILES if not (data_dir / name).is_file()]
+    required = REQUIRED_FILES
+    if args.source == "kernel" and not args.simulate_device:
+        required = tuple(name for name in REQUIRED_FILES if name != "data.snirf")
+    missing = [name for name in required if not (data_dir / name).is_file()]
     if missing:
         raise SystemExit(
             f"missing data in {data_dir}: {', '.join(missing)}\n"

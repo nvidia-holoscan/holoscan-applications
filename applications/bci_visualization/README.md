@@ -2,7 +2,7 @@
 
 This application reconstructs brain activity from [Kernel Flow](https://www.kernel.com/)
 functional near-infrared spectroscopy (fNIRS) data and shows it on an interactive 3D
-brain. It replays a recorded [SNIRF](https://github.com/fNIRS/snirf) file, solves the
+brain. It replays a recorded SNIRF file or streams from a Kernel Flow headset, solves the
 inverse problem on the GPU with CuPy, and renders the oxygenated-hemoglobin changes on
 an anatomical brain model with [VTK](https://vtk.org/). Every operator is a Holoscan SDK 5.x
 Python operator.
@@ -76,8 +76,9 @@ parallelizable modeling. This application solves it on the GPU in real time, at 
 - Python 3.12 and the packages in [requirements.txt](requirements.txt), including the
   Holoscan SDK 5.x Python Core (`holoscan-core-cu13`), CuPy, and VTK.
 - An X display for the interactive window. Headless runs render offscreen with EGL.
-- A Kernel Flow data source. This version replays recorded SNIRF files; see
-  [Prepare the data](#prepare-the-data).
+- A Kernel Flow data source: a recorded SNIRF file (see
+  [Prepare the data](#prepare-the-data)) or a headset with Kortex (see
+  [Stream from a Kernel Flow headset](#stream-from-a-kernel-flow-headset)).
 
 The application [Dockerfile](Dockerfile) installs these on a CUDA runtime image; the
 Holoscan CLI uses it for container builds and runs.
@@ -167,11 +168,42 @@ By default the replay runs as fast as the pipeline reconstructs frames. Add
 `--replay-rate realtime` to follow the recording's timestamps (4.75 Hz for Kernel Flow).
 `--frames N` stops after N samples. Run with `--help` for the other options.
 
+## Stream from a Kernel Flow headset
+
+The `live` mode streams moments from a Flow headset through Kernel's Kortex service and
+the [Kernel SDK](https://pypi.org/project/kernel-sdk/) (`kernel-sdk`, installed with the
+other requirements). Prepare the data for your headset with `prepare_data.py --headset`,
+start Kortex on the same machine, and run:
+
+```bash
+holoscan run bci_visualization live
+```
+
+The `live` mode mounts Kortex's `/etc/kernel.com/kortex.json` read-only into the
+container; if the file is missing, Docker refuses to start the container.
+
+The application keeps the channels that are valid in the first sample, and stops with an
+error that lists unmapped channels if the headset's assets don't match. Samples are shown
+as they arrive; if reconstruction falls behind, the oldest waiting samples are dropped.
+The run continues until you close the window, or for `--frames N` samples.
+Headless device simulation also exits when its recording ends. The Kernel SDK
+reports errors to Kernel through Sentry unless `SENTRY_DSN_SDK` is empty, so the
+application sets it empty unless you set it yourself.
+
+To try the live path without a headset, `--source kernel --simulate-device` streams the
+recording through the same code at its recorded rate, and `--synthetic` does the same on
+generated data:
+
+```bash
+python3 applications/bci_visualization/python/bci_visualization.py \
+  --synthetic --source kernel --simulate-device
+```
+
 ## Pipeline
 
 ```mermaid
 flowchart LR
-    S[SNIRF replay] --> B[Build RHS]
+    S[SNIRF replay or Kernel Flow] --> B[Build RHS]
     B --> N[Normalize]
     N --> R[Regularized solver]
     R --> C[Convert to voxels]
@@ -181,8 +213,8 @@ flowchart LR
 
 The reconstruction steps transform sensor-space measurements into 3D brain activity maps:
 
-1. **SNIRF replay** (`StreamOperator`) reads the recording and emits the time-of-flight
-   moments of each sample with its channel layout.
+1. **Stream** (`StreamOperator`) reads the SNIRF recording or the headset and emits the
+   time-of-flight moments of each sample with its channel layout.
 2. **Build RHS** builds the right-hand side of the inverse problem from the moments,
    using the channel map to select the matching Jacobian rows.
 3. **Normalize** scales the moments and the Jacobian by fixed upper bounds.
@@ -232,10 +264,9 @@ The data preparation test needs only Python. The other tests need the packages i
   `--view volume` copies the whole volume for VTK's GPU ray-cast volume mapper.
 - The rendering uses the 4.x colors and visible anatomy regions, without ClaraViz's
   path-traced lighting.
-- Live streaming from Kernel Flow hardware through the Kernel SDK is not part of this
-  version yet; only SNIRF replay is supported.
-
-Render timing percentiles summarize the most recent 3600 render ticks.
+functional near-infrared spectroscopy (fNIRS) data and shows it on an interactive 3D
+brain. It replays a recorded SNIRF file or streams from a Kernel Flow headset, solves the
+inverse problem on the GPU with CuPy, and renders the oxygenated-hemoglobin changes on
 
 The render clock drains a depth-one queue of completed volumes. Input timestamps
 remain intact; slow reconstruction or initial scene setup does not expire the final frame.

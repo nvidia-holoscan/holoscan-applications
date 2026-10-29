@@ -24,6 +24,37 @@ class GraphTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("compile: ok", result.stdout)
 
+    def test_compiles_with_a_simulated_headset(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(APP),
+                "--synthetic",
+                "--source",
+                "kernel",
+                "--simulate-device",
+                "--headless",
+                "--compile-only",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("compile: ok", result.stdout)
+
+    def test_synthetic_headset_needs_simulation(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(APP), "--synthetic", "--source", "kernel", "--compile-only"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--simulate-device", result.stderr)
+
     def test_reports_missing_data(self) -> None:
         result = subprocess.run(
             [sys.executable, str(APP), "--data", "/nonexistent", "--compile-only"],

@@ -85,6 +85,17 @@
           "workdir": "holohub_bin"
         }
       },
+      "live": {
+        "description": "Stream from a Kernel Flow headset through Kortex; needs /etc/kernel.com/kortex.json on the host (see README.md).",
+        "run": {
+          "command": "python3 <holohub_app_source>/python/bci_visualization.py --data <holohub_data_dir>/bci_visualization --source kernel",
+          "workdir": "holohub_bin",
+          "docker_run_args": [
+            "--mount",
+            "type=bind,source=/etc/kernel.com/kortex.json,target=/etc/kernel.com/kortex.json,readonly"
+          ]
+        }
+      },
       "ci": {
         "description": "Finite synthetic replay rendered offscreen; needs a GPU but no data or display.",
         "run": {
