@@ -22,7 +22,8 @@ _MAGIC = {
     b"\xa1\xb2\xc3\xd4": (">", False),
     b"\xa1\xb2\x3c\x4d": (">", True),
 }
-_LINK_ETHERNET, _LINK_LINUX_SLL = 1, 113
+_LINK_ETHERNET, _LINK_RAW_IP, _LINK_LINUX_SLL = 1, 101, 113
+_MAX_RECORD_BYTES = 262144  # Match PcapPacketReader.
 HDL32E_BLOCKS_PER_S = 15000  # threshold between the VLP-16 and HDL-32E firing rates
 
 
@@ -36,6 +37,8 @@ def records(path):
         link = struct.unpack(endian + "I", head[20:24])[0]
         while len(rec := f.read(16)) == 16:
             sec, frac, captured, original = struct.unpack(endian + "IIII", rec)
+            if captured > _MAX_RECORD_BYTES:
+                raise SystemExit(f"{path}: corrupt pcap record length")
             frame = f.read(captured)
             if len(frame) != captured:
                 raise SystemExit(f"{path}: truncated pcap record")
@@ -59,7 +62,7 @@ def udp(link, data):
         if len(data) < 16:
             return None
         off, ethertype = 16, struct.unpack(">H", data[14:16])[0]
-    else:
+    elif link != _LINK_RAW_IP:
         return None
     if ethertype != 0x0800 or len(data) < off + 28 or data[off + 9] != 17:
         return None

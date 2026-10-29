@@ -62,6 +62,29 @@ class PacketTest(unittest.TestCase):
 
 
 class PcapTest(unittest.TestCase):
+    def test_inspect_raw_ip_capture(self):
+        frame = make_pcap.udp_frame(make_pcap.make_packet(0), make_pcap.PORT)[14:]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "raw.pcap"
+            path.write_bytes(
+                struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 101)
+                + struct.pack("<IIII", 0, 0, len(frame), len(frame))
+                + frame
+            )
+            summary = vlp_inspect.inspect(path)
+        self.assertEqual(summary["ports"][make_pcap.PORT], 1)
+        self.assertEqual(summary["models"][0x22], 1)
+
+    def test_inspect_rejects_oversized_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "oversized.pcap"
+            path.write_bytes(
+                struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1)
+                + struct.pack("<IIII", 0, 0, 262145, 262145)
+            )
+            with self.assertRaisesRegex(SystemExit, "corrupt pcap record length"):
+                list(vlp_inspect.records(path))
+
     def test_inspect_skips_malformed_frames(self):
         ethernet = b"\0" * 12 + b"\x08\x00"
         ip = bytearray(28)

@@ -129,6 +129,7 @@ class VlpUdpSourceOp final : public holoscan::Operator<VlpUdpSourceParams> {
  private:
   static constexpr std::chrono::milliseconds kIdlePoll{100};
   static constexpr std::chrono::milliseconds kBacklogPoll{1};
+  static constexpr std::size_t kMaxDatagramsPerPoll{1024};
 
   holoscan::LifecycleStatus on_arm(holoscan::LifecycleContext& context) noexcept {
     const auto& p = params();
@@ -216,7 +217,7 @@ class VlpUdpSourceOp final : public holoscan::Operator<VlpUdpSourceParams> {
       if (ready > 0 && (waitable.revents & (POLLERR | POLLNVAL)) != 0) {
         return fail(holoscan::ErrorCode::kFailure, token);
       }
-      while (ready > 0) {
+      for (std::size_t received = 0; ready > 0 && received < kMaxDatagramsPerPoll; ++received) {
         const ssize_t size = ::recv(fd_, datagram.data(), datagram.size(), MSG_TRUNC);
         if (size < 0) {
           if (errno == EAGAIN || errno == EWOULDBLOCK) break;

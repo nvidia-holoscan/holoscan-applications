@@ -422,6 +422,31 @@ void test_sources(const std::filesystem::path& pcap) {
     check(progress->invalid_packets > 0U, "udp source rejects short datagrams");
     check(checked_bind, "udp bind exclusivity was tested");
   }
+  {
+    auto progress = std::make_shared<vl::RunProgress>();
+    auto observed = std::make_shared<Observed>();
+    const std::uint16_t port = static_cast<std::uint16_t>(40001U + (::getpid() % 20000U));
+    const int sender = ::socket(AF_INET, SOCK_DGRAM, 0);
+    sockaddr_in to{};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(port);
+    ::inet_pton(AF_INET, "127.0.0.1", &to.sin_addr);
+    std::array<std::uint8_t, vl::kPacketBytes> packet{};
+    vl::make_synthetic_packet(0, packet.data());
+    std::jthread flood([&](const std::stop_token& stop) {
+      while (!stop.stop_requested()) {
+        ::sendto(sender, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr*>(&to),
+                 sizeof(to));
+      }
+    });
+    const bool ok = run_source<vl::VlpUdpSourceOp>(
+        "udp-flood", vl::VlpUdpSourceParams{.address = "127.0.0.1", .port = port}, progress,
+        observed, 1000U);
+    flood.request_stop();
+    flood.join();
+    ::close(sender);
+    check(ok && observed->packets >= 1000U, "udp source delivers and stops under sustained load");
+  }
 }
 
 }  // namespace

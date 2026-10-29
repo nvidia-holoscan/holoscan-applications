@@ -41,6 +41,10 @@ batch of 1206-byte packets, so the rest of the graph is unchanged.
 Install the pinned CLI and select your SDK and matching development image once per
 shell, as described in the [repository README](../../README.md). From the repository root:
 
+`live` and `live-close` listen on UDP port 2368 on all interfaces by default and
+accept unauthenticated datagrams. Use `--address` to restrict the listener; see
+[Live sensor](#live-sensor) and the [security threat model](../../SECURITY.md#threat-model).
+
 ```bash
 holoscan run velodyne_lidar live       # VLP-16 on UDP port 2368
 holoscan run velodyne_lidar live-close # live sensor, close chase view
