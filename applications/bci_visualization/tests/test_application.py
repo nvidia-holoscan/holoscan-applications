@@ -42,10 +42,14 @@ class ApplicationTest(unittest.TestCase):
         self._check_render(["--replay-rate", "realtime"])
 
     def test_renders_and_finishes_with_old_capture_timestamps(self) -> None:
-        self._render(["--replay-rate", "realtime"], backdate=True)
+        for view in ("surface", "volume"):
+            with self.subTest(view=view):
+                self._render(["--view", view, "--replay-rate", "realtime"], backdate=True)
 
     def _check_render(self, options: list[str]) -> None:
-        self._render(options)
+        for view in ("surface", "volume"):
+            with self.subTest(view=view):
+                self._render([*options, "--view", view])
 
     def _render(self, options: list[str], *, backdate: bool = False) -> None:
         import vtk

@@ -5,12 +5,13 @@
 if(BUILD_TESTING)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   set(_bci_tests ${CMAKE_CURRENT_SOURCE_DIR}/../tests)
-  foreach(_bci_test IN ITEMS snirf graph solver application)
+  foreach(_bci_test IN ITEMS snirf graph surface solver application)
     add_test(NAME bci_visualization_${_bci_test}
       COMMAND ${Python3_EXECUTABLE} -m unittest discover
         -s ${_bci_tests} -p test_${_bci_test}.py -v)
   endforeach()
-  set_tests_properties(bci_visualization_snirf bci_visualization_graph PROPERTIES
+  set_tests_properties(bci_visualization_snirf bci_visualization_graph
+    bci_visualization_surface PROPERTIES
     LABELS "bci_visualization" TIMEOUT 120)
   set_tests_properties(bci_visualization_solver bci_visualization_application PROPERTIES
     LABELS "bci_visualization;gpu" TIMEOUT 300)

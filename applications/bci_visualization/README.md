@@ -1,13 +1,13 @@
 # Kernel Flow BCI Real-Time Visualization
 
 This application reconstructs brain activity from [Kernel Flow](https://www.kernel.com/)
-functional near-infrared spectroscopy (fNIRS) data and shows it as an interactive 3D
-volume. It replays a recorded [SNIRF](https://github.com/fNIRS/snirf) file, solves the
-inverse problem on the GPU with CuPy, and renders the oxygenated-hemoglobin changes inside
+functional near-infrared spectroscopy (fNIRS) data and shows it on an interactive 3D
+brain. It replays a recorded [SNIRF](https://github.com/fNIRS/snirf) file, solves the
+inverse problem on the GPU with CuPy, and renders the oxygenated-hemoglobin changes on
 an anatomical brain model with [VTK](https://vtk.org/). Every operator is a Holoscan SDK 5.x
 Python operator.
 
-![Reconstructed brain activity in the VTK window during SNIRF replay](screenshot.jpg)
+![Reconstructed brain activity on the cortex surface during SNIRF replay](screenshot.jpg)
 
 ## Overview
 
@@ -176,7 +176,7 @@ flowchart LR
     N --> R[Regularized solver]
     R --> C[Convert to voxels]
     C --> V[Voxel stream to volume]
-    V --> W[VTK volume view]
+    V --> W[VTK view]
 ```
 
 The reconstruction steps transform sensor-space measurements into 3D brain activity maps:
@@ -192,12 +192,20 @@ The reconstruction steps transform sensor-space measurements into 3D brain activ
 6. **Voxel stream to volume** resamples the HbO changes onto the anatomy mask grid and
    scales them for display with a running minimum and maximum.
 
-**VTK volume view** runs on its own 30 Hz clock and takes the newest volume, so the
-window stays responsive and interactive between reconstructed frames.
+**VTK view** runs on its own 30 Hz clock and takes the newest volume, so the window
+stays responsive and interactive between reconstructed frames.
 
 ## Visualization
 
-The view renders the volume with VTK's GPU ray-cast mapper, limited to gray matter
+By default the view colors a smoothed cortex surface with the activity averaged over the
+first 6 mm below it (`--surface-depth-mm`). Blue shows decreases, red shows increases, and
+gray shows baseline.
+
+The surface view also darkens sulci, like the 4.x path-traced shading;
+`--no-surface-texture` turns that off.
+
+`--view volume` ray casts the whole volume instead, as the 4.x application did. It uses
+VTK's GPU ray-cast mapper, limited to gray matter
 (label 3) and white matter (label 4) of the anatomy mask. The mask's other labels are
 skin (0), skull (1), CSF (2) and air (5). The transfer function follows the three layers
 of the 4.x application, over the displayed density range (−100 to 100 by default):
@@ -219,12 +227,15 @@ The data preparation test needs only Python. The other tests need the packages i
 ## Changes from the Holoscan 4.x application
 
 - The ClaraViz volume renderer and HoloViz window are replaced by a VTK operator that
-  owns its window and mouse interaction. VTK draws with its GPU ray-cast volume mapper,
-  which reads host memory, so each displayed volume is copied from the GPU once.
+  owns its window and mouse interaction. VTK reads host memory, so the surface view
+  copies only the surface colors from the GPU for each displayed volume, while
+  `--view volume` copies the whole volume for VTK's GPU ray-cast volume mapper.
 - The rendering uses the 4.x colors and visible anatomy regions, without ClaraViz's
   path-traced lighting.
 - Live streaming from Kernel Flow hardware through the Kernel SDK is not part of this
   version yet; only SNIRF replay is supported.
+
+Render timing percentiles summarize the most recent 3600 render ticks.
 
 The render clock drains a depth-one queue of completed volumes. Input timestamps
 remain intact; slow reconstruction or initial scene setup does not expire the final frame.

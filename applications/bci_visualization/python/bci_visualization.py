@@ -16,6 +16,7 @@ from pathlib import Path
 
 import h5py
 import holoscan as hs
+import numpy as np
 from operators.reconstruction import (
     BuildRHSOperator,
     ConvertToVoxelsOperator,
@@ -66,6 +67,24 @@ def parse_arguments(arguments=None):
     parser.add_argument("--reg", type=float, default=REG_DEFAULT, help="regularization")
     parser.add_argument("--visualization-scale", type=float, default=10.0)
     parser.add_argument("--render-hz", type=int, default=30)
+    parser.add_argument(
+        "--view",
+        choices=("surface", "volume"),
+        default="surface",
+        help="'surface' colors the cortex surface; 'volume' ray casts the whole volume",
+    )
+    parser.add_argument(
+        "--surface-depth-mm",
+        type=float,
+        default=6.0,
+        help="depth below the cortex surface that the surface view averages over",
+    )
+    parser.add_argument(
+        "--surface-texture",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="darken sulci in the surface view",
+    )
     parser.add_argument("--width", type=int, default=1024)
     parser.add_argument("--height", type=int, default=768)
     parser.add_argument(
@@ -79,6 +98,8 @@ def parse_arguments(arguments=None):
         parser.error("--frames must be non-negative")
     if not 1 <= args.render_hz <= 240:
         parser.error("--render-hz must be between 1 and 240")
+    if args.surface_depth_mm <= 0:
+        parser.error("--surface-depth-mm must be positive")
     return args
 
 
@@ -118,6 +139,9 @@ def build_graph(args, data_dir: Path) -> hs.Graph:
         headless=args.headless,
         simulate_drag=args.simulate_drag,
         screenshot=args.screenshot,
+        view_type=args.view,
+        surface_depth_mm=args.surface_depth_mm,
+        surface_texture=args.surface_texture,
         stop_at_last_frame=args.frames > 0,
         last_frame=replay_length(data_dir / "data.snirf", args.frames) - 1,
     )
@@ -169,6 +193,13 @@ def run(args, data_dir: Path) -> int:
     if args.simulate_drag:
         print(f"camera_moved {report.get('camera_moved')}")
     print(f"missing {report.get('missing', {})}")
+    if "surface_points" in report:
+        print(
+            f"surface_points {report['surface_points']} built in {report['surface_build_s']:.2f} s"
+        )
+    if report.get("frame_ms"):
+        p50, p95 = np.percentile(list(report["frame_ms"]), [50, 95])
+        print(f"frame_ms p50 {p50:.1f} p95 {p95:.1f}")
     print(f"same_thread {len(threads) == 3 and len(set(threads.values())) == 1}")
     if session.diagnostics:
         print(f"diagnostics {session.diagnostics!r}")
