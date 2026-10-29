@@ -36,3 +36,7 @@ set_target_properties(velodyne_lidar PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
   CXX_EXTENSIONS OFF CUDA_EXTENSIONS OFF)
 install(TARGETS velodyne_lidar RUNTIME DESTINATION bin)
+
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()

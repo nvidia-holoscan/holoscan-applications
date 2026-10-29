@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-_PATH = pathlib.Path(__file__).resolve().parents[1] / "make_pcap.py"
+_PATH = pathlib.Path(__file__).resolve().parents[2] / "make_pcap.py"
 _SPEC = importlib.util.spec_from_file_location("make_pcap", _PATH)
 make_pcap = importlib.util.module_from_spec(_SPEC)
 sys.modules["make_pcap"] = make_pcap
