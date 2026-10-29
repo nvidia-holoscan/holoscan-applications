@@ -6,6 +6,7 @@
 #include "video_file_writer.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/rational.h>
 #include <libswscale/swscale.h>
 }
 
@@ -234,11 +236,17 @@ void VideoFileWriterOp::start() {
 
   codec_ctx_->width = config.width;
   codec_ctx_->height = config.height;
-  codec_ctx_->time_base = AVRational{1, std::max(1, static_cast<int>(config.fps))};
-  codec_ctx_->framerate = AVRational{std::max(1, static_cast<int>(config.fps)), 1};
+  if (!std::isfinite(config.fps) || config.fps <= 0.0f) {
+    std::string msg{"VideoFileWriterOp: fps must be positive and finite (got "};
+    msg += std::to_string(config.fps);
+    msg += ")";
+    throw std::runtime_error(msg);
+  }
+  codec_ctx_->framerate = av_d2q(static_cast<double>(config.fps), 1'000'000);
+  codec_ctx_->time_base = av_inv_q(codec_ctx_->framerate);
   codec_ctx_->pix_fmt = encode_fmt;
   codec_ctx_->bit_rate = config.bitrate;
-  codec_ctx_->gop_size = std::max(1, static_cast<int>(config.fps));
+  codec_ctx_->gop_size = std::max(1, static_cast<int>(std::lround(config.fps)));
   if (format_ctx_->oformat->flags & AVFMT_GLOBALHEADER) {
     codec_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
   }

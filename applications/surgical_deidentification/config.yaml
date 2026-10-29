@@ -4,7 +4,7 @@
 
 inference:
   model_path_map:
-    de_id: /data/de_id/model/de_id.onnx
+    de_id: /data/endoscopy_out_of_body_detection/out_of_body_detection.onnx
   input_map:
     de_id: [de_id_preprocessed]
   output_map:
@@ -19,7 +19,7 @@ inference:
   enable_cuda_graphs: false
 
 video_source:
-  path: /data/de_id/video/outbody/out-of-body-op1-2.mp4
+  path: /data/endoscopy_out_of_body_detection/sample_clip_out_of_body_detection.mp4
   tensor_port_name: raw_frame
   output_pix_fmt: rgb24
   output_layout: nhwc

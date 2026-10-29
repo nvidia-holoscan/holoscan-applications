@@ -201,6 +201,17 @@ void VideoFileReaderOp::setup(OperatorSpec& spec) {
     resolved_height_ = config.output_height.value_or(probe.height);
   }
 
+  if (resolved_width_ <= 0 || resolved_height_ <= 0) {
+    std::string msg{"VideoFileReaderOp: resolved frame dimensions must be positive (got "};
+    msg += std::to_string(resolved_width_);
+    msg += "x";
+    msg += std::to_string(resolved_height_);
+    msg += "; set output_width/output_height or verify the source file at '";
+    msg += config.path;
+    msg += "')";
+    throw std::runtime_error(msg);
+  }
+
   shape_.clear();
   if (config.prepend_batch_dim) {
     shape_.push_back(1);
