@@ -61,7 +61,8 @@ holoscan run <application> <mode>
 without executing them. The
 [Holoscan SDK image](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara-holoscan/containers/holoscan)
 above supports x86_64 and aarch64; use another image if the application's README
-requires one.
+requires one. For reproducible builds, pin the image to an immutable digest
+instead of a tag, as [SECURITY.md](SECURITY.md) assumes.
 
 ### Build on the host
 
