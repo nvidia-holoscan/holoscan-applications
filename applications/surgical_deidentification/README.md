@@ -179,10 +179,11 @@ holoscan run surgical_deidentification \
 `config.yaml` is a single YAML document consumed by the application's YAML loader. The
 relevant knobs:
 
-- `inference.model_path_map.de_id` — absolute path to `de_id.onnx` inside the container.
-  Must point under the dataset mount.
+- `inference.model_path_map.de_id` — absolute path to `out_of_body_detection.onnx` inside
+  the container, under the CMake-populated dataset directory
+  (`/data/endoscopy_out_of_body_detection/`).
 - `inference.input_map` / `output_map` — tensor names bridging the preprocessor to the
-  classifier head. The defaults match the shipped `de_id.onnx`.
+  classifier head. The defaults match the shipped `out_of_body_detection.onnx`.
 - `preprocessor.input_pix_fmt`, `output_width`, `output_height`,
   `normalize_mean`, `normalize_std` — standard `TensorPreprocessorOp` knobs; see the
   SDK's tensor_preprocessor README for the full menu.

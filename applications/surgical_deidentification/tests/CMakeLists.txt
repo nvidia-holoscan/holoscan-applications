@@ -106,7 +106,6 @@ add_test(
 set_tests_properties(surgical_deid_binary_e2e_test
     PROPERTIES
         SKIP_RETURN_CODE 77
-        PASS_REGULAR_EXPRESSION "Likely (in-body|out-of-body)"
         LABELS "gpu;functional;surgical_deidentification"
         TIMEOUT 240
 )

@@ -171,7 +171,7 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
 
 struct CliArgs {
   std::string config_path;
-  std::size_t ticks = 10U;
+  std::size_t ticks = 0U;
 };
 
 [[nodiscard]] bool parse_args(int argc, char** argv, CliArgs& out) {
@@ -281,9 +281,14 @@ int main(int argc, char** argv) {
     }
 
     holoscan::RunSession session = holoscan::run_async(plan);
-    const bool complete = RunObservation::wait_for(args.ticks, std::chrono::seconds{60});
-    session.request_stop();
-    session.wait();
+    bool complete = true;
+    if (args.ticks == 0U) {
+      session.wait();
+    } else {
+      complete = RunObservation::wait_for(args.ticks, std::chrono::seconds{60});
+      session.request_stop();
+      session.wait();
+    }
 
     // Inference-cadence summary. Skips the first 10 intervals so the TRT-warm-up cost does
     // not distort the steady-state percentiles. Requires --ticks >= ~50 to yield meaningful

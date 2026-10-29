@@ -19,8 +19,17 @@ endif()
 execute_process(
     COMMAND "${DE_ID}" --config "${CONFIG}" --ticks "${TICKS}"
     RESULT_VARIABLE rc
+    OUTPUT_VARIABLE out
+    ERROR_VARIABLE  err
 )
 
 if(NOT rc EQUAL 0)
-    message(FATAL_ERROR "de_id exited with code ${rc}")
+    message(FATAL_ERROR "de_id exited with code ${rc}\nstdout:\n${out}\nstderr:\n${err}")
+endif()
+
+string(REGEX MATCH "Likely (in-body|out-of-body)" matched "${out}")
+if(NOT matched)
+    message(FATAL_ERROR
+        "expected classification line ('Likely in-body' or 'Likely out-of-body') "
+        "not found in de_id stdout:\n${out}")
 endif()

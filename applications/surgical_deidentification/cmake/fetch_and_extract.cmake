@@ -1,14 +1,20 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-#
-# Script-mode helper invoked by DownloadData.cmake. Downloads ${URL} to ${ARCHIVE}
-# (skipping if the archive already exists) and extracts it into ${DEST}.
 
-foreach(var URL ARCHIVE DEST)
+foreach(var URL ARCHIVE DEST VERSION STAMP)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "fetch_and_extract.cmake: ${var} not set")
     endif()
 endforeach()
+
+if(EXISTS "${STAMP}")
+    file(READ "${STAMP}" _stamped_version)
+    string(STRIP "${_stamped_version}" _stamped_version)
+    if("${_stamped_version}" STREQUAL "${VERSION}")
+        message(STATUS "Dataset already at version ${VERSION}; skipping download.")
+        return()
+    endif()
+endif()
 
 if(NOT EXISTS "${ARCHIVE}")
     message(STATUS "Downloading ${URL}")
@@ -27,3 +33,5 @@ endif()
 file(MAKE_DIRECTORY "${DEST}")
 message(STATUS "Extracting ${ARCHIVE} -> ${DEST}")
 file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${DEST}")
+
+file(WRITE "${STAMP}" "${VERSION}\n")
