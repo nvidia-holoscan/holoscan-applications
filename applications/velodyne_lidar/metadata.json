@@ -1,0 +1,139 @@
+{
+  "application": {
+    "name": "Velodyne VLP-16 Lidar Viewer",
+    "description": "Receive Velodyne VLP-16 packets over UDP or from a pcap recording, build a rolling point cloud on the GPU, and view it from a fixed top-down or chase camera on Holoscan 5.x.",
+    "authors": [
+      {
+        "name": "Holoscan Team",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "nvMap Team",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "nvMap Embedded Team",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Tom Birdsong",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Julien Jomier",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Jiahao Yin",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Marlene Wan",
+        "affiliation": "NVIDIA"
+      }
+    ],
+    "language": "C++",
+    "version": "2.0.0",
+    "changelog": {
+      "2.0.0": "Holoscan 5.x port: UDP, pcap, and synthetic sources; fixed top-down and chase views rendered on the GPU; DAQIRI removed.",
+      "1.1": "Port UDP receive path to DAQIRI",
+      "1.0": "Initial Release"
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "5.0.0",
+      "tested_versions": [
+        "5.0.0"
+      ]
+    },
+    "platforms": [
+      "x86_64",
+      "aarch64"
+    ],
+    "tags": [
+      "Signal Processing",
+      "Lidar",
+      "Point Cloud",
+      "UDP",
+      "Visualization"
+    ],
+    "ranking": 4,
+    "requirements": {
+      "hardware": [
+        {
+          "name": "Velodyne VLP-16",
+          "description": "Live mode only: a VLP-16 sensor sending data packets to UDP port 2368."
+        }
+      ],
+      "data": [
+        {
+          "name": "VLP-16 pcap recording",
+          "description": "Replay mode only: any classic-pcap VLP-16 recording, such as the VeloView samples, or a synthetic one from make_pcap.py.",
+          "url": "https://www.paraview.org/veloview/#download"
+        }
+      ]
+    },
+    "default_mode": "live",
+    "modes": {
+      "live": {
+        "description": "Receive packets from a VLP-16 on UDP port 2368 (all interfaces) and display them.",
+        "build": {
+          "cmake_options": [
+            "-DVELODYNE_ENABLE_VISUALIZATION=ON"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/velodyne_lidar\" --source udp",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "live-close": {
+        "description": "Receive live VLP-16 UDP packets with a close chase view centered on the sensor for nearby testing.",
+        "build": {
+          "cmake_options": [
+            "-DVELODYNE_ENABLE_VISUALIZATION=ON"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/velodyne_lidar\" --source udp --view chase --eye 0,-2,1 --target 0,0,0 --fov-deg 60 --point-size 3",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "replay": {
+        "description": "Replay a VLP-16 pcap recording at its recorded pace and display it.",
+        "build": {
+          "cmake_options": [
+            "-DVELODYNE_ENABLE_VISUALIZATION=ON"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/velodyne_lidar\" --pcap \"<holohub_data_dir>/velodyne/recording.pcap\" --loop true",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "synthetic": {
+        "description": "Display an endless synthetic VLP-16 sweep of a simple room; no sensor or data needed.",
+        "build": {
+          "cmake_options": [
+            "-DVELODYNE_ENABLE_VISUALIZATION=ON"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/velodyne_lidar\" --source synthetic --count 0",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "ci": {
+        "description": "Finite headless run on synthetic packets; needs a GPU but no sensor, data, or display.",
+        "build": {
+          "cmake_options": [
+            "-DVELODYNE_ENABLE_VISUALIZATION=OFF"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/velodyne_lidar\" --source synthetic --count 760 --display false",
+          "workdir": "holohub_app_bin"
+        }
+      }
+    }
+  }
+}
