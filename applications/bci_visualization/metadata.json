@@ -1,0 +1,113 @@
+{
+  "application": {
+    "name": "Kernel Flow BCI Real-Time Visualization",
+    "description": "Reconstruct Kernel Flow fNIRS moments into 3D hemoglobin volumes with CuPy and render them interactively with VTK on Holoscan 5.x.",
+    "authors": [
+      {
+        "name": "Holoscan Team",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Kernel Team",
+        "affiliation": "Kernel"
+      },
+      {
+        "name": "Mimi Liao",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Tom Birdsong",
+        "affiliation": "NVIDIA"
+      },
+      {
+        "name": "Julien Dubois",
+        "affiliation": "Kernel"
+      },
+      {
+        "name": "Victor Szczepanski",
+        "affiliation": "Kernel"
+      },
+      {
+        "name": "Gabe Lerner",
+        "affiliation": "Kernel"
+      }
+    ],
+    "language": "Python",
+    "version": "2.0.0",
+    "changelog": {
+      "2.0.0": "Holoscan 5.x Python operators with an interactive VTK volume view.",
+      "1.0.0": "Initial HoloHub release with ClaraViz rendering."
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "5.0.0",
+      "tested_versions": [
+        "5.0.0"
+      ]
+    },
+    "platforms": [
+      "x86_64",
+      "aarch64"
+    ],
+    "tags": [
+      "Visualization",
+      "BCI",
+      "Brain-Computer Interface",
+      "fNIRS",
+      "Hemodynamics",
+      "Volume Rendering",
+      "Neuroscience",
+      "Optical Sensing"
+    ],
+    "ranking": 2,
+    "requirements": {
+      "data": [
+        {
+          "name": "Kernel Flow BCI sample data",
+          "description": "Application-local prepare_data.py downloads the SNIRF recording, anatomy mask, and one headset's reconstruction assets.",
+          "url": "https://huggingface.co/datasets/KernelCo/holohub_bci_visualization",
+          "version": "fe75bc160f929e680d1e6ef04cd42139782cb8ec"
+        }
+      ]
+    },
+    "default_mode": "replay",
+    "modes": {
+      "replay": {
+        "description": "Replay the prepared SNIRF recording in an interactive VTK window.",
+        "run": {
+          "command": "python3 <holohub_app_source>/python/bci_visualization.py --data <holohub_data_dir>/bci_visualization",
+          "workdir": "holohub_bin"
+        }
+      },
+      "headless": {
+        "description": "Replay the prepared recording offscreen and save the last frame.",
+        "run": {
+          "command": "python3 <holohub_app_source>/python/bci_visualization.py --data <holohub_data_dir>/bci_visualization --headless --screenshot bci_visualization.png",
+          "workdir": "holohub_bin"
+        }
+      },
+      "live": {
+        "description": "Stream from a Kernel Flow headset through Kortex; needs /etc/kernel.com/kortex.json on the host (see README.md).",
+        "run": {
+          "command": "python3 <holohub_app_source>/python/bci_visualization.py --data <holohub_data_dir>/bci_visualization --source kernel",
+          "workdir": "holohub_bin",
+          "docker_run_args": [
+            "--mount",
+            "type=bind,source=/etc/kernel.com/kortex.json,target=/etc/kernel.com/kortex.json,readonly"
+          ]
+        }
+      },
+      "ci": {
+        "description": "Finite synthetic replay rendered offscreen; needs a GPU but no data or display.",
+        "run": {
+          "command": "python3 <holohub_app_source>/python/bci_visualization.py --synthetic --headless --frames 8 --replay-rate realtime",
+          "workdir": "holohub_bin"
+        },
+        "build": {
+          "cmake_options": [
+            "-DHOLOHUB_DOWNLOAD_DATASETS=OFF"
+          ]
+        }
+      }
+    }
+  }
+}
