@@ -127,10 +127,10 @@ class VlpPcapSourceOp final : public holoscan::Operator<VlpPcapSourceParams> {
       have_pending_ = false;
       ++count;
     }
+    progress_->invalid_packets.store(reader_->skipped());
     if (count > 0U)
       HOLOSCAN_TRY(emit_packets(packets, staging_.data(), count, context, *progress_));
     if (finished_) {
-      progress_->invalid_packets.store(reader_->skipped());
       if (progress_->emitted_packets.load() == 0U) {
         return holoscan::make_unexpected(
             holoscan::Error{holoscan::ErrorCode::kInvalidArgument,

@@ -30,29 +30,45 @@ def records(path):
     """Yield (link type, timestamp in seconds, frame bytes) for each record."""
     with open(path, "rb") as f:
         head = f.read(24)
-        if head[:4] not in _MAGIC:
+        if len(head) != 24 or head[:4] not in _MAGIC:
             raise SystemExit(f"{path}: not a classic pcap (pcapng? use editcap -F pcap)")
         endian, nano = _MAGIC[head[:4]]
         link = struct.unpack(endian + "I", head[20:24])[0]
         while len(rec := f.read(16)) == 16:
-            sec, frac, captured, _ = struct.unpack(endian + "IIII", rec)
-            yield link, sec + frac * (1e-9 if nano else 1e-6), f.read(captured)
+            sec, frac, captured, original = struct.unpack(endian + "IIII", rec)
+            frame = f.read(captured)
+            if len(frame) != captured:
+                raise SystemExit(f"{path}: truncated pcap record")
+            if captured == original:
+                yield link, sec + frac * (1e-9 if nano else 1e-6), frame
 
 
 def udp(link, data):
     """Return (destination port, payload) for IPv4/UDP frames, else None."""
     off, ethertype = 0, 0x0800
     if link == _LINK_ETHERNET:
+        if len(data) < 14:
+            return None
         off, ethertype = 14, struct.unpack(">H", data[12:14])[0]
         while ethertype in (0x8100, 0x88A8):
+            if len(data) < off + 4:
+                return None
             ethertype = struct.unpack(">H", data[off + 2 : off + 4])[0]
             off += 4
     elif link == _LINK_LINUX_SLL:
+        if len(data) < 16:
+            return None
         off, ethertype = 16, struct.unpack(">H", data[14:16])[0]
+    else:
+        return None
     if ethertype != 0x0800 or len(data) < off + 28 or data[off + 9] != 17:
         return None
     ihl = (data[off] & 0x0F) * 4
+    if data[off] >> 4 != 4 or ihl < 20 or len(data) < off + ihl + 8:
+        return None
     port, length = struct.unpack(">HH", data[off + ihl + 2 : off + ihl + 6])
+    if length < 8 or len(data) < off + ihl + length:
+        return None
     return port, data[off + ihl + 8 : off + ihl + length]
 
 

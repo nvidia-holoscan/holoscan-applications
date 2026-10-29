@@ -332,6 +332,15 @@ void test_sources(const std::filesystem::path& pcap) {
   {
     auto progress = std::make_shared<vl::RunProgress>();
     auto observed = std::make_shared<Observed>();
+    const bool ok = run_source<vl::VlpPcapSourceOp>(
+        "pcap-loop", vl::VlpPcapSourceParams{.path = pcap.string(), .period_ms = 2U, .loop = true},
+        progress, observed, 40U);
+    check(ok && observed->packets >= 40U, "looping pcap graph completes");
+    check(progress->invalid_packets.load() >= 2U, "looping pcap reports accumulated skips");
+  }
+  {
+    auto progress = std::make_shared<vl::RunProgress>();
+    auto observed = std::make_shared<Observed>();
     const bool ok = run_source<vl::VlpSyntheticSourceOp>(
         "synthetic",
         vl::VlpSyntheticSourceParams{.count = 50U, .packets_per_tick = 8U, .period_ms = 1U},
@@ -386,8 +395,18 @@ void test_sources(const std::filesystem::path& pcap) {
     ::inet_pton(AF_INET, "127.0.0.1", &to.sin_addr);
     std::array<std::uint8_t, vl::kPacketBytes> packet{};
     std::uint32_t sent = 0;
+    bool checked_bind = false;
     // Send until the sink has 40 packets; datagrams sent before the bind are lost.
     auto send_some = [&] {
+      if (!checked_bind && observed->packets > 0U) {
+        const int second = ::socket(AF_INET, SOCK_DGRAM, 0);
+        const int reuse = 1;
+        ::setsockopt(second, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        check(::bind(second, reinterpret_cast<sockaddr*>(&to), sizeof(to)) != 0,
+              "udp listener excludes a second bind");
+        ::close(second);
+        checked_bind = true;
+      }
       if (observed->packets >= 40U) return;
       vl::make_synthetic_packet(sent++, packet.data());
       ::sendto(sender, packet.data(), packet.size(), 0, reinterpret_cast<sockaddr*>(&to),
@@ -401,6 +420,7 @@ void test_sources(const std::filesystem::path& pcap) {
     check(ok, "udp graph completes");
     check(observed->packets >= 40U && observed->invalid == 0U, "udp packets arrive");
     check(progress->invalid_packets > 0U, "udp source rejects short datagrams");
+    check(checked_bind, "udp bind exclusivity was tested");
   }
 }
 

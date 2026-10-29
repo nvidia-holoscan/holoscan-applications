@@ -144,8 +144,6 @@ class VlpUdpSourceOp final : public holoscan::Operator<VlpUdpSourceParams> {
       HOLOSCAN_LOG_ERROR("VlpUdpSourceOp: socket() failed: {}", std::strerror(errno));
       return holoscan::LifecycleStatus::kFatalFailure;
     }
-    const int reuse = 1;
-    static_cast<void>(::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)));
     const int rcvbuf = static_cast<int>(p.receive_buffer_bytes);
     static_cast<void>(::setsockopt(fd_, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)));
     if (::bind(fd_, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) != 0) {

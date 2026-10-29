@@ -62,6 +62,26 @@ class PacketTest(unittest.TestCase):
 
 
 class PcapTest(unittest.TestCase):
+    def test_inspect_skips_malformed_frames(self):
+        ethernet = b"\0" * 12 + b"\x08\x00"
+        ip = bytearray(28)
+        ip[0], ip[9] = 0x4F, 17
+        frames = [b"", b"\0" * 13, b"\0" * 12 + b"\x81\x00\0\0", ethernet + ip]
+        for frame in frames:
+            with self.subTest(frame=frame):
+                self.assertIsNone(vlp_inspect.udp(1, frame))
+        self.assertIsNone(vlp_inspect.udp(113, b"\0" * 15))
+
+    def test_inspect_skips_snaplen_truncation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "truncated.pcap"
+            make_pcap.write_pcap(path, 2)
+            data = bytearray(path.read_bytes())
+            captured = struct.unpack_from("<I", data, 32)[0]
+            struct.pack_into("<I", data, 36, captured + 1)
+            path.write_bytes(data)
+            self.assertEqual(len(list(vlp_inspect.records(path))), 3)
+
     def test_records_and_filter_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "fixture.pcap"
