@@ -74,10 +74,10 @@ The detection model and sample datasets are available on [NGC](https://catalog.n
 - Pre-trained ONNX model for out-of-body detection: `out_of_body_detection.onnx`
 - Sample endoscopy video clips (MP4 format): `sample_clip_out_of_body_detection.mp4`
 
-| Artifact           | Expected path on host                                                         |
-|--------------------|-------------------------------------------------------------------------------|
-| ONNX model         | `<data_root>/endoscopy_out_of_body_detection/out_of_body_detection.onnx`      |
-| Sample video       | `<data_root>/endoscopy_out_of_body_detection/sample_clip_out_of_body_detection.mp4` |
+| Artifact     | Expected path on host                                                               |
+|--------------|-------------------------------------------------------------------------------------|
+| ONNX model   | `<data_root>/endoscopy_out_of_body_detection/out_of_body_detection.onnx`            |
+| Sample video | `<data_root>/endoscopy_out_of_body_detection/sample_clip_out_of_body_detection.mp4` |
 
 The paths above match the stock `config.yaml` after mounting `<data_root>` at `/data`
 inside the container (see **Run** below). The CMake-driven download places the resource
@@ -144,7 +144,7 @@ holoscan run surgical_deidentification \
 
 After the TensorRT engine builds on first run, the pipeline prints:
 
-```
+```text
 [info] Engine file missing at /data/de_id/model/de_id.<...>.engine.fp16. Starting generation process.
 [info] Engine generation completed in 5.867 seconds.
 in-body
@@ -160,10 +160,11 @@ Per-tick delta (µs) — samples=94 (post-warmup)
 
 The CLI forwards everything after `--run-args` straight to the `de_id` binary.
 
-| Flag                     | Default                              | Meaning                                                   |
-|--------------------------|--------------------------------------|-----------------------------------------------------------|
-| `--config <path.yaml>`   | `<holohub_app_bin>/config.yaml` (shipped alongside the binary) | Path to the YAML configuration file. |
-| `--ticks <N>`            | `0` (unbounded — runs until EOF)     | Stop after `N` sink activations. Useful for benchmarking. |
+| Flag                   | Default                                                        | Meaning                                                                                     |
+|------------------------|----------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| `--config <path.yaml>` | `<holohub_app_bin>/config.yaml` (shipped alongside the binary) | Path to the YAML configuration file.                                                        |
+| `--ticks <N>`          | `0` (unbounded — runs until EOF)                               | Stop after `N` sink activations. Useful for benchmarking.                                   |
+| `--self-test`          | (off)                                                          | Load dynamic libraries, print `de_id self-test ok`, exit 0. Used by the metadata `ci` mode. |
 
 Examples:
 
@@ -214,13 +215,13 @@ end up using.
 The following codecs can be invoked at runtime depending on the input / output configuration
 chosen by the user:
 
-| Operator                | Direction | Codec / format      | Patent-pool status (non-legal summary) |
-|-------------------------|-----------|---------------------|-----------------------------------------|
-| `VideoFileReaderOp`     | Decode    | H.264 / MPEG-4 Part 10 (AVC) | MPEG-LA AVC patent pool. Royalty-bearing for commercial encoders and some distribution scenarios. |
-|                         | Decode    | H.265 / MPEG-H Part 2 (HEVC) | Multiple patent pools (MPEG-LA, Access Advance, Velos Media). Royalty-bearing. |
-|                         | Decode    | MPEG-4 Visual, VP9, AV1, MJPEG, raw YUV, and any other codec supported by the host FFmpeg build | Varies — AV1 is royalty-free, VP9 effectively so, MPEG-4 Visual is patent-pool. |
-| `VideoFileWriterOp`     | Encode    | `libx264` (H.264 / MPEG-4 Part 10, AVC) by default, regardless of the output container. Set `codec` in the writer config to pick a different encoder. | Same pools as the decode side; encoding generally has stricter royalty terms than decoding. |
-| Container               | Both      | MPEG-4 Part 14 (`.mp4`) and any other container supported by FFmpeg | ISO/IEC base media file format — MPEG-4 Systems patent pool applies to some uses. |
+| Operator            | Direction | Codec / format                                                                                                                                        | Patent-pool status (non-legal summary)                                                            |
+|---------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| `VideoFileReaderOp` | Decode    | H.264 / MPEG-4 Part 10 (AVC)                                                                                                                          | MPEG-LA AVC patent pool. Royalty-bearing for commercial encoders and some distribution scenarios. |
+|                     | Decode    | H.265 / MPEG-H Part 2 (HEVC)                                                                                                                          | Multiple patent pools (MPEG-LA, Access Advance, Velos Media). Royalty-bearing.                    |
+|                     | Decode    | MPEG-4 Visual, VP9, AV1, MJPEG, raw YUV, and any other codec supported by the host FFmpeg build                                                       | Varies — AV1 is royalty-free, VP9 effectively so, MPEG-4 Visual is patent-pool.                   |
+| `VideoFileWriterOp` | Encode    | `libx264` (H.264 / MPEG-4 Part 10, AVC) by default, regardless of the output container. Set `codec` in the writer config to pick a different encoder. | Same pools as the decode side; encoding generally has stricter royalty terms than decoding.       |
+| Container           | Both      | MPEG-4 Part 14 (`.mp4`) and any other container supported by FFmpeg                                                                                   | ISO/IEC base media file format — MPEG-4 Systems patent pool applies to some uses.                 |
 
 ### FFmpeg library licensing
 

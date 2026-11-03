@@ -10,6 +10,8 @@
 // Pipeline: VideoFileReaderOp (decode .mp4) -> TensorPreprocessorOp (resize + normalize) ->
 // InferenceOp (de_id.onnx) -> ClassificationPrinterOp (stdout). See README.md.
 
+#include <yaml-cpp/yaml.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -37,7 +39,6 @@
 #include <holoscan/operators/inference/inference.hpp>
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
 #include <holoscan/time/realtime_clock.hpp>
-#include <yaml-cpp/yaml.h>
 
 #include "video_file_reader.hpp"
 

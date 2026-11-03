@@ -8,6 +8,13 @@
 // MP4 with libavformat to verify width/height/encoded-frame-count match configuration.
 
 #include <cuda_runtime_api.h>
+#include <dlpack/dlpack.h>
+#include <gtest/gtest.h>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+}
 
 #include <algorithm>
 #include <chrono>
@@ -18,14 +25,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <dlpack/dlpack.h>
-#include <gtest/gtest.h>
-
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-}
 
 #include <holoscan/core/compile.hpp>
 #include <holoscan/core/connection_options.hpp>

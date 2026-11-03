@@ -5,14 +5,6 @@
 
 #include "video_file_reader.hpp"
 
-#include <algorithm>
-#include <chrono>
-#include <cstring>
-#include <stdexcept>
-#include <string>
-#include <thread>
-#include <utility>
-
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -21,9 +13,17 @@ extern "C" {
 }
 
 #include <cuda_runtime_api.h>
+#include <yaml-cpp/yaml.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstring>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <utility>
 
 #include <holoscan/core/graph.hpp>
-#include <yaml-cpp/yaml.h>
 
 namespace holoscan::ops {
 
