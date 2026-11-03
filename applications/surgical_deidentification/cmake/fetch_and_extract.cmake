@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-foreach(var URL ARCHIVE DEST VERSION STAMP)
+foreach(var URL ARCHIVE DEST VERSION STAMP MP4 ONNX)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "fetch_and_extract.cmake: ${var} not set")
     endif()
@@ -10,7 +10,9 @@ endforeach()
 if(EXISTS "${STAMP}")
     file(READ "${STAMP}" _stamped_version)
     string(STRIP "${_stamped_version}" _stamped_version)
-    if("${_stamped_version}" STREQUAL "${VERSION}")
+    if("${_stamped_version}" STREQUAL "${VERSION}"
+       AND EXISTS "${MP4}"
+       AND EXISTS "${ONNX}")
         message(STATUS "Dataset already at version ${VERSION}; skipping download.")
         return()
     endif()

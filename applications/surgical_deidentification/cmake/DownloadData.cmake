@@ -29,7 +29,9 @@ add_custom_command(
             -DDEST=${_sd_data_root}
             -DVERSION=${SURGICAL_DEID_NGC_VERSION}
             -DSTAMP=${_sd_stamp}
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/fetch_and_extract.cmake"
+            -DMP4=${_sd_mp4}
+            -DONNX=${_sd_onnx}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/fetch_and_extract.cmake"
     VERBATIM
     COMMENT "Downloading endoscopy_out_of_body_detection (${SURGICAL_DEID_NGC_VERSION}) from NGC"
 )

@@ -46,7 +46,8 @@ extern "C" {
 namespace holoscan::ops {
 namespace {
 
-using namespace std::chrono_literals;
+using std::chrono_literals::operator""ms;
+using std::chrono_literals::operator""s;
 
 constexpr std::chrono::nanoseconds kFeedPeriod = 10ms;
 constexpr std::chrono::seconds kRunTimeout = 30s;

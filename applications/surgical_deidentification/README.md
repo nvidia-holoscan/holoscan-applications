@@ -74,14 +74,16 @@ The detection model and sample datasets are available on [NGC](https://catalog.n
 - Pre-trained ONNX model for out-of-body detection: `out_of_body_detection.onnx`
 - Sample endoscopy video clips (MP4 format): `sample_clip_out_of_body_detection.mp4`
 
-| Artifact           | Expected path on host                                    |
-|--------------------|----------------------------------------------------------|
-| ONNX model         | `<data_root>/de_id/model/<model_name>.onnx`              |
-| Sample video       | `<data_root>/de_id/video/outbody/<file_name>.mp4`        |
+| Artifact           | Expected path on host                                                         |
+|--------------------|-------------------------------------------------------------------------------|
+| ONNX model         | `<data_root>/endoscopy_out_of_body_detection/out_of_body_detection.onnx`      |
+| Sample video       | `<data_root>/endoscopy_out_of_body_detection/sample_clip_out_of_body_detection.mp4` |
 
 The paths above match the stock `config.yaml` after mounting `<data_root>` at `/data`
-inside the container (see **Run** below). Any other layout works too — just edit the
-`model_path_map` and `video_path` entries in `config.yaml`.
+inside the container (see **Run** below). The CMake-driven download places the resource
+at `<build-dir>/data/endoscopy_out_of_body_detection/` by default; mount that directory
+at `/data` to run end-to-end without copying files. Any other layout works too — just
+edit `inference.model_path_map.de_id` and `video_source.path` in `config.yaml`.
 
 ## Quick Start Guide
 
@@ -89,9 +91,9 @@ inside the container (see **Run** below). Any other layout works too — just ed
 # One-time: build the image and project.
 holoscan build surgical_deidentification
 
-# Each run: mount your dataset and launch.
+# Each run: mount the CMake-populated dataset directory at /data and launch.
 holoscan run surgical_deidentification \
-  --docker-opts="-v <host/path/to/data>:/data"
+  --docker-opts="-v <build-dir>/data:/data"
 ```
 
 That's it — the baked `config.yaml` resolves paths under `/data/...` and the container runs
@@ -128,12 +130,14 @@ holoscan build surgical_deidentification --local
 
 ### Run
 
-Mount your dataset directory at `/data` inside the container; the stock `config.yaml`
-expects model and video paths rooted there.
+Mount the CMake-populated dataset directory at `/data` inside the container; the stock
+`config.yaml` expects model and video paths rooted there. The default download target
+writes to `<build-dir>/data/endoscopy_out_of_body_detection/` — mount `<build-dir>/data`
+to `/data` and the paths line up.
 
 ```sh
 holoscan run surgical_deidentification \
-    --docker-opts="-v $HOME/data:/data"
+    --docker-opts="-v <build-dir>/data:/data"
 ```
 
 #### Expected output
@@ -166,12 +170,12 @@ Examples:
 ```sh
 # Benchmark: cap at 500 ticks.
 holoscan run surgical_deidentification \
-    --docker-opts="-v $HOME/data:/data" \
+    --docker-opts="-v <build-dir>/data:/data" \
     --run-args="--ticks 500"
 
 # Try an edited config without touching the checkout — mount it over the installed one.
 holoscan run surgical_deidentification \
-    --docker-opts="-v $HOME/data:/data -v $PWD/my_overrides.yaml:/workspace/bin/config.yaml:ro"
+    --docker-opts="-v <build-dir>/data:/data -v $PWD/my_overrides.yaml:/workspace/bin/config.yaml:ro"
 ```
 
 ## Configuration
@@ -184,10 +188,12 @@ relevant knobs:
   (`/data/endoscopy_out_of_body_detection/`).
 - `inference.input_map` / `output_map` — tensor names bridging the preprocessor to the
   classifier head. The defaults match the shipped `out_of_body_detection.onnx`.
-- `preprocessor.input_pix_fmt`, `output_width`, `output_height`,
+- `preprocessor.output_width`, `output_height`, `output_pix_fmt`, `output_layout`,
   `normalize_mean`, `normalize_std` — standard `TensorPreprocessorOp` knobs; see the
   SDK's tensor_preprocessor README for the full menu.
-- `reader.video_path` — absolute path to the input `.mp4` inside the container.
+- `video_source.path` — absolute path to the input `.mp4` inside the container.
+- `video_source.loop`, `frame_count`, `frame_rate` — reader-side pacing knobs; the stock
+  config sets `loop: true` and `frame_count: 0` so the pipeline runs until stopped.
 
 The CLI ships `config.yaml` alongside the installed `de_id` binary. To swap in a
 different config without rebuilding, mount it over the installed one at run time as
@@ -213,7 +219,7 @@ chosen by the user:
 | `VideoFileReaderOp`     | Decode    | H.264 / MPEG-4 Part 10 (AVC) | MPEG-LA AVC patent pool. Royalty-bearing for commercial encoders and some distribution scenarios. |
 |                         | Decode    | H.265 / MPEG-H Part 2 (HEVC) | Multiple patent pools (MPEG-LA, Access Advance, Velos Media). Royalty-bearing. |
 |                         | Decode    | MPEG-4 Visual, VP9, AV1, MJPEG, raw YUV, and any other codec supported by the host FFmpeg build | Varies — AV1 is royalty-free, VP9 effectively so, MPEG-4 Visual is patent-pool. |
-| `VideoFileWriterOp`     | Encode    | Whatever codec its config selects (defaults to the FFmpeg encoder matching the output container; typically H.264 for `.mp4`) | Same pools as the decode side; encoding generally has stricter royalty terms than decoding. |
+| `VideoFileWriterOp`     | Encode    | `libx264` (H.264 / MPEG-4 Part 10, AVC) by default, regardless of the output container. Set `codec` in the writer config to pick a different encoder. | Same pools as the decode side; encoding generally has stricter royalty terms than decoding. |
 | Container               | Both      | MPEG-4 Part 14 (`.mp4`) and any other container supported by FFmpeg | ISO/IEC base media file format — MPEG-4 Systems patent pool applies to some uses. |
 
 ### FFmpeg library licensing

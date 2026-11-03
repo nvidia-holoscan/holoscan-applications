@@ -38,7 +38,7 @@
 namespace holoscan::ops {
 namespace {
 
-using namespace std::chrono_literals;
+using std::chrono_literals::operator""s;
 
 /// @brief Captures every tensor the sink sees so the test can inspect shape / dtype.
 struct SinkObservation {

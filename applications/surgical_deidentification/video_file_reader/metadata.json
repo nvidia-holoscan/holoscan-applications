@@ -1,9 +1,9 @@
 {
     "operator": {
         "name": "VideoFileReaderOp",
-        "description": "FFmpeg-backed decoder operator. Reads an .mp4 (or any libavformat-supported container) frame-by-frame on the CPU, uploads each decoded frame to device memory, and emits it as a holoscan::Tensor in uint8 HWC RGB layout.",
+        "description": "FFmpeg-backed decoder operator. Reads an .mp4 (or any libavformat-supported container, including RTSP/HTTP live streams) frame-by-frame on the CPU, uploads each decoded frame to device memory, and emits it as a holoscan::Tensor. Supported output layouts are NHWC and NCHW; supported pixel formats are rgb24/bgr24 (uint8), rgb_fp32/bgr_fp32 (float, normalized to [0, 1]), grayscale_u8, and grayscale_fp32. Resize and layout conversion are performed via libswscale.",
         "authors": [
-            { "name": "HoloHub Team", "affiliation": "NVIDIA" }
+            { "name": "Holoscan Team", "affiliation": "NVIDIA" }
         ],
         "version": "1.0",
         "changelog": { "1.0": "Initial Release" },
