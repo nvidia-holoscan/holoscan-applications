@@ -54,9 +54,11 @@ resource. Two ways:
   of `holoscan build` / `cmake --build .`.
 - **Fetch on demand**: `cmake --build <build-dir> --target de_id_download_data`.
 
-Both drop the resource at `${HOLOHUB_DATA_DIR}/endoscopy_out_of_body_detection/`
-(default `<build>/data/endoscopy_out_of_body_detection/`). Override the location with
-`-DHOLOHUB_DATA_DIR=/path/on/host` and the pinned version with
+Both drop the resource at `${HOLOHUB_DATA_DIR}/endoscopy_out_of_body_detection/`.
+The CMake default is `<build>/data`; to align with the Holoscan CLI's default
+`<repository>/data` layout (what the baked `config.yaml` expects to be mounted at
+`/data` inside the container), configure with
+`-DHOLOHUB_DATA_DIR=<repository>/data`. Pin a different NGC version with
 `-DSURGICAL_DEID_NGC_VERSION=<ver>`. The e2e ctest picks the files up automatically
 and no longer skips.
 
@@ -80,20 +82,24 @@ The detection model and sample datasets are available on [NGC](https://catalog.n
 | Sample video | `<data_root>/endoscopy_out_of_body_detection/sample_clip_out_of_body_detection.mp4` |
 
 The paths above match the stock `config.yaml` after mounting `<data_root>` at `/data`
-inside the container (see **Run** below). The CMake-driven download places the resource
-at `<build-dir>/data/endoscopy_out_of_body_detection/` by default; mount that directory
-at `/data` to run end-to-end without copying files. Any other layout works too — just
-edit `inference.model_path_map.de_id` and `video_source.path` in `config.yaml`.
+inside the container (see **Run** below). When the build is configured with
+`-DHOLOHUB_DATA_DIR=<repository>/data -DSURGICAL_DEID_DOWNLOAD_DATA=ON` the CMake download
+target places the resource at `<repository>/data/endoscopy_out_of_body_detection/`, matching
+the Holoscan CLI's default data directory. Mount that directory at `/data` to run
+end-to-end without copying files. Any other layout works too — just edit
+`inference.model_path_map.de_id` and `video_source.path` in `config.yaml`.
 
 ## Quick Start Guide
 
 ```sh
-# One-time: build the image and project.
-holoscan build surgical_deidentification
+# One-time: build the image and project, fetching the NGC dataset into <repository>/data/
+# so the Holoscan CLI's default data directory lines up with the stock config.yaml.
+holoscan build surgical_deidentification \
+    --build-args="-DHOLOHUB_DATA_DIR=$PWD/data -DSURGICAL_DEID_DOWNLOAD_DATA=ON"
 
-# Each run: mount the CMake-populated dataset directory at /data and launch.
+# Each run: mount the dataset directory at /data and launch.
 holoscan run surgical_deidentification \
-  --docker-opts="-v <build-dir>/data:/data"
+    --docker-opts="-v $PWD/data:/data"
 ```
 
 That's it — the baked `config.yaml` resolves paths under `/data/...` and the container runs
@@ -131,13 +137,13 @@ holoscan build surgical_deidentification --local
 ### Run
 
 Mount the CMake-populated dataset directory at `/data` inside the container; the stock
-`config.yaml` expects model and video paths rooted there. The default download target
-writes to `<build-dir>/data/endoscopy_out_of_body_detection/` — mount `<build-dir>/data`
-to `/data` and the paths line up.
+`config.yaml` expects model and video paths rooted there. The Quick Start step above
+places the dataset at `<repository>/data/endoscopy_out_of_body_detection/` (the Holoscan
+CLI's default data directory), so mount `<repository>/data` at `/data`:
 
 ```sh
 holoscan run surgical_deidentification \
-    --docker-opts="-v <build-dir>/data:/data"
+    --docker-opts="-v $PWD/data:/data"
 ```
 
 #### Expected output
@@ -171,12 +177,12 @@ Examples:
 ```sh
 # Benchmark: cap at 500 ticks.
 holoscan run surgical_deidentification \
-    --docker-opts="-v <build-dir>/data:/data" \
+    --docker-opts="-v $PWD/data:/data" \
     --run-args="--ticks 500"
 
 # Try an edited config without touching the checkout — mount it over the installed one.
 holoscan run surgical_deidentification \
-    --docker-opts="-v <build-dir>/data:/data -v $PWD/my_overrides.yaml:/workspace/bin/config.yaml:ro"
+    --docker-opts="-v $PWD/data:/data -v $PWD/my_overrides.yaml:/workspace/bin/config.yaml:ro"
 ```
 
 ## Configuration
@@ -220,7 +226,7 @@ chosen by the user:
 | `VideoFileReaderOp` | Decode    | H.264 / MPEG-4 Part 10 (AVC)                                                                                                                          | MPEG-LA AVC patent pool. Royalty-bearing for commercial encoders and some distribution scenarios. |
 |                     | Decode    | H.265 / MPEG-H Part 2 (HEVC)                                                                                                                          | Multiple patent pools (MPEG-LA, Access Advance, Velos Media). Royalty-bearing.                    |
 |                     | Decode    | MPEG-4 Visual, VP9, AV1, MJPEG, raw YUV, and any other codec supported by the host FFmpeg build                                                       | Varies — AV1 is royalty-free, VP9 effectively so, MPEG-4 Visual is patent-pool.                   |
-| `VideoFileWriterOp` | Encode    | `libx264` (H.264 / MPEG-4 Part 10, AVC) by default, regardless of the output container. Set `codec` in the writer config to pick a different encoder. | Same pools as the decode side; encoding generally has stricter royalty terms than decoding.       |
+| `VideoFileWriterOp` | Encode    | `mpeg4` (MPEG-4 Visual Part 2) by default (ships with every FFmpeg build). Set `codec` to libx264/libx265/mjpeg/ffv1 (needs that encoder in FFmpeg).  | mpeg4 is MPEG-4 Visual patent-pool; alternatives are royalty-bearing where their codecs are.      |
 | Container           | Both      | MPEG-4 Part 14 (`.mp4`) and any other container supported by FFmpeg                                                                                   | ISO/IEC base media file format — MPEG-4 Systems patent pool applies to some uses.                 |
 
 ### FFmpeg library licensing

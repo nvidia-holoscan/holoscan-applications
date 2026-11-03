@@ -42,16 +42,25 @@ target_link_libraries(de_id
 set_target_properties(de_id PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
     CXX_EXTENSIONS OFF
+    INSTALL_RPATH "$ORIGIN/../lib"
+    INSTALL_RPATH_USE_LINK_PATH TRUE
 )
 
+set(_sd_cfg_src "${CMAKE_CURRENT_SOURCE_DIR}/../config.yaml")
+set(_sd_cfg_dst "${CMAKE_CURRENT_BINARY_DIR}/../config.yaml")
 add_custom_command(
-    TARGET de_id POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/../config.yaml"
-        "$<TARGET_FILE_DIR:de_id>/config.yaml"
+    OUTPUT  "${_sd_cfg_dst}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_sd_cfg_src}" "${_sd_cfg_dst}"
+    DEPENDS "${_sd_cfg_src}"
+    VERBATIM
 )
+add_custom_target(de_id_config DEPENDS "${_sd_cfg_dst}")
+add_dependencies(de_id de_id_config)
 
-install(TARGETS de_id RUNTIME DESTINATION bin)
+install(TARGETS de_id op_video_file_reader op_video_file_writer
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+)
 install(FILES ../config.yaml DESTINATION bin)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/DownloadData.cmake)

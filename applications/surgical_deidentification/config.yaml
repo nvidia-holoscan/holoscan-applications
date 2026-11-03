@@ -40,3 +40,4 @@ preprocessor:
   normalize_mean: [0.0, 0.0, 0.0]
   normalize_std: [1.0, 1.0, 1.0]
   memory_kind: cuda_device
+# touch test 1793685207
