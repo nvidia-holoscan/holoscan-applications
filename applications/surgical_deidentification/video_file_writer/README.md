@@ -15,7 +15,7 @@ a per-compute D→H PCIe transfer on the operator's CUDA stream.
 |-------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `path`                              | Output file path passed to `avio_open`.                                                                                                |
 | `tensor_port_name`                  | Name of the consumed input port.                                                                                                       |
-| `codec`                             | libav encoder name resolved via `avcodec_find_encoder_by_name` (e.g. `libx264`).                                                       |
+| `codec`                             | libav encoder name resolved via `avcodec_find_encoder_by_name`. Default: `mpeg4` (ships in every FFmpeg build).                        |
 | `output_container`                  | Optional muxer name (`mp4`, `mkv`, …). If empty, inferred from `path`.                                                                 |
 | `input_pix_fmt`                     | One of `rgb24`, `bgr24`, `rgb_fp32`, `bgr_fp32`, `grayscale_u8`, `grayscale_fp32`. `*_fp32` triggers host-side clamp-to-u8 loop.       |
 | `input_layout`                      | `nchw` or `nhwc`. `nchw` triggers the host-side transpose loop.                                                                        |

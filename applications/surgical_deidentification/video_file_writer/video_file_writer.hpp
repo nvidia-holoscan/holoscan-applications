@@ -54,8 +54,11 @@ struct VideoFileWriterOpParams {
   /// Name of the single declared `Input<Tensor>` port. Must match the tensor name the upstream
   /// producer (typically `InferenceOp`) emits on its matching `Output<Tensor>` port.
   std::string tensor_port_name{"frame"};
-  /// libavcodec encoder name: `libx264`, `libx265`, `mpeg4`, `mjpeg`, or `ffv1` (lossless).
-  std::string codec{"libx264"};
+  /// libavcodec encoder name: `mpeg4` (default, ships with every stock FFmpeg build),
+  /// `libx264`, `libx265`, `mjpeg`, or `ffv1` (lossless). `libx264`/`libx265` require a
+  /// FFmpeg built with `--enable-gpl --enable-libx264`/`--enable-libx265` and the matching
+  /// runtime library.
+  std::string codec{"mpeg4"};
   /// libavformat output format/muxer short name. Empty (the default) infers the muxer from
   /// `path`'s extension via `avformat_alloc_output_context2()`.
   std::string output_container;
@@ -92,7 +95,7 @@ struct VideoFileWriterOpParams {
    *   - type: video_file                 # required discriminant (see holoinfer_example.cpp)
    *     path: ../data/output_video.mp4    # required; resolved relative to config_dir if relative
    *     tensor_port_name: tensor_out       # default: "frame"
-   *     codec: libx264                     # default: "libx264"
+   *     codec: mpeg4                       # default: "mpeg4"
    *     input_pix_fmt: rgb_fp32            # default: "rgb24"
    *     input_layout: nchw                 # default: "nchw"
    *     strip_batch_dim: true              # default: true
