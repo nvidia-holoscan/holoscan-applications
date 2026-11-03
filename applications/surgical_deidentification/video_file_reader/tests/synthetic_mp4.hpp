@@ -9,17 +9,17 @@
 
 #pragma once
 
-#include <cstdint>
-#include <stdexcept>
-#include <string>
-#include <vector>
-
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 }
+
+#include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace surgical_deid::test {
 

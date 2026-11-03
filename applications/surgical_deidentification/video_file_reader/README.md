@@ -21,16 +21,16 @@ libav uses its default software codec.
 
 ## Parameters (summary)
 
-| Parameter          | Effect                                                                         |
-|--------------------|--------------------------------------------------------------------------------|
-| `path`             | Local file path or URL passed to `avformat_open_input`.                        |
-| `tensor_port_name` | Name of the emitted output port.                                               |
-| `output_width` / `output_height` | Optional resize target for `sws_scale`. If unset, native resolution is used. |
-| `output_pix_fmt`   | One of `rgb24`, `bgr24`, `rgb_fp32`, `bgr_fp32`, `grayscale_u8`, `grayscale_fp32`. `*_fp32` triggers the host-side normalization loop. |
-| `output_layout`    | `nchw` or `nhwc`. `nchw` triggers the host-side transpose loop.               |
-| `prepend_batch_dim`| If true, output shape becomes `[1, ...]`.                                     |
-| `memory_kind`      | `cuda_device` / `cuda_managed` / `host` / `pinned_host`. Controls whether the H→D copy fires. |
-| `frame_count`      | Cap on how many frames are emitted. Any value `≤ 0` means unlimited (the default is `0`); the cap only fires when the parameter is strictly positive. |
-| `frame_rate`       | If `> 0`, sleep-based pacing between emissions.                               |
-| `loop`             | If true, seek back to the beginning at EOS.                                   |
-| `stream_index`     | `-1` picks the best video stream via `av_find_best_stream`.                   |
+| Parameter                        | Effect                                                                                                                                               |
+|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `path`                           | Local file path or URL passed to `avformat_open_input`.                                                                                              |
+| `tensor_port_name`               | Name of the emitted output port.                                                                                                                     |
+| `output_width` / `output_height` | Optional resize target for `sws_scale`. If unset, native resolution is used.                                                                         |
+| `output_pix_fmt`                 | One of `rgb24`, `bgr24`, `rgb_fp32`, `bgr_fp32`, `grayscale_u8`, `grayscale_fp32`. `*_fp32` triggers the host-side normalization loop.               |
+| `output_layout`                  | `nchw` or `nhwc`. `nchw` triggers the host-side transpose loop.                                                                                      |
+| `prepend_batch_dim`              | If true, output shape becomes `[1, ...]`.                                                                                                            |
+| `memory_kind`                    | `cuda_device` / `cuda_managed` / `host` / `pinned_host`. Controls whether the H→D copy fires.                                                        |
+| `frame_count`                    | Cap on how many frames are emitted. Any value `≤ 0` means unlimited (default `0`); the cap only fires when the parameter is strictly positive.       |
+| `frame_rate`                     | If `> 0`, sleep-based pacing between emissions.                                                                                                      |
+| `loop`                           | If true, seek back to the beginning at EOS.                                                                                                          |
+| `stream_index`                   | `-1` picks the best video stream via `av_find_best_stream`.                                                                                          |

@@ -6,6 +6,8 @@
 // Runtime / functional test for VideoFileReaderOp::compute().
 
 #include <cuda_runtime_api.h>
+#include <dlpack/dlpack.h>
+#include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
@@ -17,8 +19,6 @@
 #include <utility>
 #include <vector>
 
-#include <dlpack/dlpack.h>
-#include <gtest/gtest.h>
 #include <holoscan/core/compile.hpp>
 #include <holoscan/core/connection_options.hpp>
 #include <holoscan/core/domain/tensor.hpp>

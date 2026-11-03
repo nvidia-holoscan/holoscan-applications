@@ -5,14 +5,6 @@
 
 #include "video_file_writer.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <stdexcept>
-#include <string>
-#include <utility>
-#include <vector>
-
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -22,8 +14,17 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#include <holoscan/core/graph.hpp>
 #include <yaml-cpp/yaml.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <holoscan/core/graph.hpp>
 
 namespace holoscan::ops {
 
