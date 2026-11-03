@@ -36,7 +36,7 @@ height: 256
 )");
   EXPECT_EQ(p.path, "out.mp4");
   EXPECT_EQ(p.tensor_port_name, "frame");
-  EXPECT_EQ(p.codec, "libx264");
+  EXPECT_EQ(p.codec, "mpeg4");
   EXPECT_EQ(p.input_pix_fmt, "rgb24");
   EXPECT_EQ(p.input_layout, "nchw");
   EXPECT_TRUE(p.strip_batch_dim);
