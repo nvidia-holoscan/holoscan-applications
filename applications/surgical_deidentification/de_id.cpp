@@ -21,6 +21,7 @@
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <holoscan/core/compile.hpp>
@@ -36,8 +37,9 @@
 #include <holoscan/operators/inference/inference.hpp>
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
 #include <holoscan/time/realtime_clock.hpp>
-#include <video_file_reader.hpp>
 #include <yaml-cpp/yaml.h>
+
+#include "video_file_reader.hpp"
 
 namespace {
 
@@ -172,6 +174,7 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
 struct CliArgs {
   std::string config_path;
   std::size_t ticks = 0U;
+  bool self_test = false;
 };
 
 [[nodiscard]] bool parse_args(int argc, char** argv, CliArgs& out) {
@@ -181,12 +184,14 @@ struct CliArgs {
       out.config_path = argv[++i];
     } else if (arg == "--ticks" && i + 1 < argc) {
       out.ticks = static_cast<std::size_t>(std::stoul(argv[++i]));
+    } else if (arg == "--self-test") {
+      out.self_test = true;
     } else {
       std::cerr << "unrecognized argument: " << arg << '\n';
       return false;
     }
   }
-  return !out.config_path.empty();
+  return out.self_test || !out.config_path.empty();
 }
 
 }  // namespace
@@ -194,8 +199,13 @@ struct CliArgs {
 int main(int argc, char** argv) {
   CliArgs args;
   if (!parse_args(argc, argv, args)) {
-    std::cerr << "usage: de_id --config <path.yaml> [--ticks N]\n";
+    std::cerr << "usage: de_id --config <path.yaml> [--ticks N] | --self-test\n";
     return 1;
+  }
+
+  if (args.self_test) {
+    std::cout << "de_id self-test ok\n";
+    return 0;
   }
 
   YAML::Node config_root;
