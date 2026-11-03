@@ -25,8 +25,7 @@
 
 // Forward declarations for libavcodec/libavformat/libswscale C types, so this public header does
 // not force every downstream consumer of holoscan::core to pull in <libavformat/avformat.h> etc.
-// (mirrors how raw_tensor_reader.hpp forward-declares YAML::Node instead of including
-// <yaml-cpp/yaml.h>). The full definitions are only needed by video_file_reader.cpp.
+// The full definitions are only needed by video_file_reader.cpp.
 extern "C" {
 struct AVFormatContext;
 struct AVCodecContext;
@@ -44,14 +43,12 @@ namespace holoscan::ops {
 /**
  * @brief Compile-time-authored configuration for VideoFileReaderOp.
  *
- * Mirrors RawTensorReaderOpParams (see raw_tensor_reader.hpp), but the underlying source is a
- * compressed video container (`.mp4`, `.avi`, `.mkv`, ...; anything libavformat can demux and
- * libavcodec can decode) decoded frame-by-frame via libavcodec/libavformat, resampled to a target
- * pixel format/resolution via libswscale, and emitted as a Tensor. Because libavformat's demuxer
- * accepts any URL its registered protocols understand, `path` may also be an `rtsp://` or
- * `http(s)://` live-stream URL with no code change (see examples/holoinfer/README.md's "Live
- * sources" note) -- naming it `path` (not `url`) keeps the YAML surface consistent with
- * RawTensorReaderOpParams.
+ * The underlying source is a compressed video container (`.mp4`, `.avi`, `.mkv`, ...; anything
+ * libavformat can demux and libavcodec can decode) decoded frame-by-frame via
+ * libavcodec/libavformat, resampled to a target pixel format/resolution via libswscale, and
+ * emitted as a Tensor. Because libavformat's demuxer accepts any URL its registered protocols
+ * understand, `path` may also be an `rtsp://` or `http(s)://` live-stream URL with no code
+ * change.
  */
 struct VideoFileReaderOpParams {
   /// Path (or libavformat-supported URL, e.g. `rtsp://...`) to the input video. Relative
@@ -96,26 +93,25 @@ struct VideoFileReaderOpParams {
   int32_t stream_index{-1};
 
   /**
-   * @brief Populate one `VideoFileReaderOpParams` from a `tensor_sources:` list entry.
+   * @brief Populate one `VideoFileReaderOpParams` from a flat `video_source:` YAML map.
    *
    * ```yaml
-   * tensor_sources:
-   *   - type: video_file                 # required discriminant (see holoinfer_example.cpp)
-   *     path: ../data/sample_video.mp4    # required; resolved relative to config_dir if relative
-   *     tensor_port_name: tensor_in        # default: "frame"
-   *     output_pix_fmt: rgb_fp32           # default: "rgb24"
-   *     output_layout: nchw                # default: "nchw"
-   *     output_width: 256                  # default: unset (native decoded width)
-   *     output_height: 256                 # default: unset (native decoded height)
-   *     prepend_batch_dim: true            # default: true
-   *     memory_kind: cuda_device           # default: cuda_device
-   *     frame_count: 0                     # default: 0 (decode until end of stream)
-   *     frame_rate: 0                      # default: 0 (as fast as possible)
-   *     loop: false                        # default: false
-   *     stream_index: -1                   # default: -1 (first video stream)
+   * video_source:
+   *   path: ../data/sample_video.mp4    # required; resolved relative to config_dir if relative
+   *   tensor_port_name: raw_frame        # default: "frame"
+   *   output_pix_fmt: rgb24              # default: "rgb24"
+   *   output_layout: nhwc                # default: "nchw"
+   *   output_width: 256                  # default: unset (native decoded width)
+   *   output_height: 256                 # default: unset (native decoded height)
+   *   prepend_batch_dim: false           # default: true
+   *   memory_kind: cuda_device           # default: cuda_device
+   *   frame_count: 0                     # default: 0 (decode until end of stream)
+   *   frame_rate: 0                      # default: 0 (as fast as possible)
+   *   loop: true                         # default: false
+   *   stream_index: -1                   # default: -1 (first video stream)
    * ```
    *
-   * @param node One entry of a `tensor_sources:` sequence.
+   * @param node The `video_source:` YAML map node.
    * @param config_dir Directory the owning YAML file was loaded from; used to resolve a relative
    *   `path`.
    * @return The populated `VideoFileReaderOpParams`.
@@ -130,17 +126,15 @@ struct VideoFileReaderOpParams {
  * @brief Decode frames from a compressed video file (or live stream URL) via
  * libavformat/libavcodec, resample via libswscale, and emit each as a Tensor.
  *
- * The compressed-video dual of RawTensorReaderOp: instead of a flat, headerless `.raw` file of
- * pre-shaped frames, the source is any container/codec libavformat/libavcodec can open (MP4, AVI,
- * MKV, MPEG-TS, or a live RTSP/HTTP URL). One instance decodes one video stream; a multi-input
- * model needs one instance per `tensor_sources:` entry (see holoinfer_example.cpp's driver-side
- * wiring, which dispatches on each entry's `type:` key).
+ * The source is any container/codec libavformat/libavcodec can open (MP4, AVI, MKV, MPEG-TS,
+ * or a live RTSP/HTTP URL). One instance decodes one video stream; a multi-input model needs
+ * one instance per source, wired on the application side.
  */
 class VideoFileReaderOp : public holoscan::Operator<VideoFileReaderOpParams> {
  public:
   VideoFileReaderOp() = default;
 
-  /// @brief Construct with `params` already bound (mirrors `InferenceOp(InferenceOpParams)`).
+  /// @brief Construct with `params` already bound.
   /// @throws std::runtime_error if `params` fails aggregate validation.
   explicit VideoFileReaderOp(VideoFileReaderOpParams params);
 
