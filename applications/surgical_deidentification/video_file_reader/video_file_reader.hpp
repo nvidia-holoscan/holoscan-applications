@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <dlpack/dlpack.h>
+
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -12,7 +14,6 @@
 #include <string>
 #include <vector>
 
-#include <dlpack/dlpack.h>
 #include <holoscan/core/domain/tensor.hpp>
 #include <holoscan/core/errors.hpp>
 #include <holoscan/core/execution_context.hpp>

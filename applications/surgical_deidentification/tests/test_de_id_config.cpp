@@ -6,13 +6,14 @@
 // App-level config smoke test. Loads the shipped applications/surgical_deidentification/config.yaml
 // and verifies each sub-section parses through the correct operator-side from_yaml_node() helper.
 
+#include <gtest/gtest.h>
+#include <yaml-cpp/yaml.h>
+
 #include <filesystem>
 #include <string>
 
-#include <gtest/gtest.h>
 #include <holoscan/operators/inference/inference.hpp>
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
-#include <yaml-cpp/yaml.h>
 
 #include "video_file_reader.hpp"
 

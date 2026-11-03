@@ -6,12 +6,12 @@
 // Pure-CPU unit tests for VideoFileWriterOpParams::from_yaml_node().
 // Mirrors the SDK's test_yaml_config.cpp pattern — no Fragment, no CUDA, no FFmpeg runtime.
 
+#include <gtest/gtest.h>
+#include <yaml-cpp/yaml.h>
+
 #include <filesystem>
 #include <fstream>
 #include <string>
-
-#include <gtest/gtest.h>
-#include <yaml-cpp/yaml.h>
 
 #include "video_file_writer.hpp"
 
