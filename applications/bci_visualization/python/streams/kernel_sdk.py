@@ -152,9 +152,12 @@ class SNIRFFlowReceiver:
                 channels.detector_module,
                 channels.detector_number,
             )
-            origin = time.monotonic()
+            origin = None
             for timestamp, moments in self._snirf.stream_nirs():
-                if self._stopped.wait(max(0.0, origin + timestamp - time.monotonic())):
+                now = time.monotonic()
+                if origin is None:
+                    origin = now - timestamp
+                if self._stopped.wait(max(0.0, origin + timestamp - now)):
                     return
                 sample = np.full(SAMPLE_SHAPE, np.nan)
                 sample[index] = moments.transpose(1, 0, 2)

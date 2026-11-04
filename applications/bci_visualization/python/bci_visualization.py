@@ -108,6 +108,8 @@ def parse_arguments(arguments=None):
     args = parser.parse_args(arguments)
     if args.frames < 0:
         parser.error("--frames must be non-negative")
+    if args.frames == 1:
+        parser.error("reconstruction needs at least two samples: a baseline plus another sample")
     if args.simulate_device and args.source != "kernel":
         parser.error("--simulate-device needs --source kernel")
     if args.synthetic and args.source == "kernel" and not args.simulate_device:
@@ -194,6 +196,12 @@ def run(args, data_dir: Path) -> int:
         raise SystemExit(
             f"missing data in {data_dir}: {', '.join(missing)}\n"
             "Prepare it with prepare_data.py (see README.md) or pass --synthetic."
+        )
+    if (args.source == "snirf" or args.simulate_device) and replay_length(
+        data_dir / "data.snirf", args.frames
+    ) < 2:
+        raise SystemExit(
+            "reconstruction needs at least two samples: a baseline plus another sample"
         )
     plan = hs.compile(build_graph(args, data_dir))
     if not plan.ok:

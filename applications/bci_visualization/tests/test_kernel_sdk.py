@@ -56,6 +56,35 @@ class FakeReceiver:
 
 
 class KernelSDKStreamTest(unittest.TestCase):
+    def test_snirf_receiver_rebases_timestamps_and_can_cancel(self) -> None:
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel), tempfile.TemporaryDirectory() as directory:
+                snirf = write_synthetic_dataset(Path(directory), samples=3) / "data.snirf"
+                receiver = SNIRFFlowReceiver(snirf)
+                original = receiver._snirf.stream_nirs
+
+                def shifted_samples(original=original):
+                    for timestamp, moments in original():
+                        yield timestamp + 30, moments
+
+                with (
+                    mock.patch.object(receiver._snirf, "stream_nirs", shifted_samples),
+                    mock.patch.object(
+                        kernel_sdk.time, "monotonic", side_effect=[100, 100.1, 100.2]
+                    ),
+                    mock.patch.object(
+                        receiver._stopped, "wait", side_effect=[False, cancel, False]
+                    ) as wait,
+                ):
+                    samples = list(receiver.samples())
+                self.assertEqual(len(samples), 1 if cancel else 3)
+                delays = [call.args[0] for call in wait.call_args_list]
+                self.assertAlmostEqual(delays[0], 0)
+                self.assertAlmostEqual(delays[1], 1 / 4.75 - 0.1)
+                if not cancel:
+                    self.assertAlmostEqual(delays[2], 2 / 4.75 - 0.2)
+                self.assertFalse(receiver._snirf._snirf_file.id.valid)
+
     def test_keeps_channels_valid_in_the_first_sample(self) -> None:
         stream = KernelSDKStream(lambda: FakeReceiver([flow_sample(1.0), flow_sample(5.0)]))
         stream.start()

@@ -176,7 +176,10 @@ python3 applications/bci_visualization/python/bci_visualization.py --data data/b
 
 By default the replay runs as fast as the pipeline reconstructs frames. Add
 `--replay-rate realtime` to follow the recording's timestamps (4.75 Hz for Kernel Flow).
-`--frames N` stops after N samples. Run with `--help` for the other options.
+`--frames N` stops after N samples; `0` replays all samples. Reconstruction requires
+at least two samples: the first captures the baseline and the next produces a volume.
+`--frames 1` and recordings with fewer than two samples are rejected, including in
+compile-only mode. Run with `--help` for the other options.
 
 ## Stream from a Kernel Flow headset
 
@@ -294,3 +297,16 @@ For manually supplied data, disable automatic downloads with
 recording and reconstruction assets via the application's `--data` option. Selecting
 another headset's assets does not replace the bundled Flow 2 recording with a matching
 recording.
+
+## Inherited reconstruction limitations
+
+Two limitations from the archived Holoscan 4.x application are deferred beyond this port:
+
+- Display statistics require both extrema to be nonzero before initialization. Activity
+  with only positive or only negative values alongside zero background remains hidden
+  until a frame satisfies that condition. The archived code used the same condition,
+  but could fail while updating uninitialized statistics; this port waits instead.
+  See the [archived normalizer](https://github.com/nvidia-holoscan/holohub/blob/8add7cfab2617611de2718f39ffc3141260e88b5/applications/bci_visualization/operators/voxel_stream_to_volume/voxel_stream_to_volume.py).
+- Voxel placement subtracts the minimum rounded IJK index without adjusting the affine
+  translation. Custom grids with a nonzero minimum index can therefore shift activity
+  relative to the anatomy. See the [archived voxel conversion](https://github.com/nvidia-holoscan/holohub/blob/8add7cfab2617611de2718f39ffc3141260e88b5/applications/bci_visualization/operators/reconstruction/convert_to_voxels_operator.py).

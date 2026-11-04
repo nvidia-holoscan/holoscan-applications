@@ -38,6 +38,33 @@ raise SystemExit(app.main())
 
 
 class ApplicationTest(unittest.TestCase):
+    def test_two_samples_produce_one_volume_and_finish(self) -> None:
+        for view in ("surface", "volume"):
+            for source in ([], ["--source", "kernel", "--simulate-device"]):
+                with self.subTest(view=view, source=source):
+                    environment = dict(os.environ)
+                    environment.setdefault("VTK_DEFAULT_OPENGL_WINDOW", "vtkEGLRenderWindow")
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(APP),
+                            "--synthetic",
+                            "--headless",
+                            "--frames",
+                            "2",
+                            "--view",
+                            view,
+                            *source,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=240,
+                        env=environment,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertRegex(result.stdout, r"volumes 1\b")
+
     def test_synthetic_replay_renders_volumes(self) -> None:
         self._check_render(["--replay-rate", "realtime"])
 
