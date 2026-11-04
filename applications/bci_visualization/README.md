@@ -18,11 +18,11 @@ Flow 2 headset. A recorded dataset and a replayer let you build and experiment w
 visualization and classification pipelines without access to the hardware.
 
 The application processes streaming
-[moments from the distribution of time-of-flight histograms](https://doi.org/10.1117/1.NPh.10.1.013504),
+[moments from the distribution of time-of-flight histograms](https://pmc.ncbi.nlm.nih.gov/articles/PMC9587749/),
 read from a [shared near-infrared spectroscopy format (SNIRF)](https://github.com/fNIRS/snirf)
 recording. It combines the moments with the sensors' spatial geometry and an average
 anatomical head model to produce source-reconstructed outputs similar to
-[previously published work](https://direct.mit.edu/imag/article/doi/10.1162/imag_a_00475/127769/A-Compact-Time-Domain-Diffuse-Optical-Tomography).
+[previously published work](https://pmc.ncbi.nlm.nih.gov/articles/PMC12319781/).
 
 ## Background
 
@@ -55,7 +55,7 @@ oxyhemoglobin and deoxyhemoglobin. This makes it possible to follow the location
 brain that are demanding and consuming oxygen, an indirect measure of neuronal activity.
 The same biophysical principles are behind the pulse oximeters in smart watches and
 finger-clip sensors. For more detail on the biophysics, see
-[this review article](https://www.mdpi.com/2076-3417/9/8/1612).
+[this review article](https://mdpi-res.com/d_attachment/applsci/applsci-09-01612/article_deploy/applsci-09-01612.pdf).
 
 The Kernel Flow headset combines 120 laser sources and 240 custom sensors to collect over
 3000 measurement paths that criss-cross the head, at a frame rate of 4.75 Hz:
