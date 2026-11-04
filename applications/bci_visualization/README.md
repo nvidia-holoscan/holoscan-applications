@@ -87,7 +87,7 @@ Holoscan CLI uses it for container builds and runs.
 
 `holoscan build` and `holoscan run` download the data into `data/bci_visualization`
 the first time (except in the `ci` mode). Pass
-`--cmake-options="-DHOLOHUB_DOWNLOAD_DATASETS=OFF"` to skip the download. To prepare it
+`--configure-args="-DHOLOHUB_DOWNLOAD_DATASETS=OFF"` to skip the download. To prepare it
 by hand instead, from the repository root:
 
 ```bash
