@@ -92,20 +92,26 @@ class ApplicationTest(unittest.TestCase):
                 ("synthetic", ("--source", "synthetic", "--count", "1")),
                 ("pcap", ("--pcap", pcap)),
             ):
-                with self.subTest(source=name):
-                    snapshot = pathlib.Path(tmp) / f"{name}.ppm"
-                    result = self.run_app(
-                        *source,
-                        "--render-period-ms",
-                        "200",
-                        "--timeout-seconds",
-                        "20",
-                        "--snapshot",
-                        snapshot,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn("packets=1 ", result.stdout)
-                    self.assertTrue(snapshot.is_file())
+                for period in (200, 999, 1000):
+                    with self.subTest(source=name, render_period_ms=period):
+                        snapshot = pathlib.Path(tmp) / f"{name}-{period}.ppm"
+                        result = self.run_app(
+                            *source,
+                            "--render-period-ms",
+                            period,
+                            "--timeout-seconds",
+                            "20",
+                            "--snapshot",
+                            snapshot,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertIn("packets=1 batches=1 integrated=1 ", result.stdout)
+                        self.assertRegex(result.stdout, r"frames=[1-9]\d* ")
+                        self.assertIn("verdict=PASS", result.stdout)
+                        data = snapshot.read_bytes()
+                        header = b"P6\n720 720\n255\n"
+                        self.assertTrue(data.startswith(header))
+                        self.assertEqual(len(data) - len(header), 720 * 720 * 3)
 
     @unittest.skipUnless(gpu_available(), "requires an NVIDIA GPU")
     def test_pcap_replay(self):

@@ -206,9 +206,13 @@ void PointCloudRenderOp::setup(holoscan::OperatorSpec& spec) {
 }
 
 holoscan::Contract PointCloudRenderOp::contract() const {
+  const auto period = std::chrono::milliseconds{params().period_ms};
+  // Allow a full render period plus scheduling margin so a finite run's final cloud
+  // remains eligible at the first render activation, including the 1000 ms boundary.
+  const auto max_age = period + std::chrono::seconds{1};
   holoscan::Contract result;
-  result.trigger(holoscan::OnClock{.period = std::chrono::milliseconds{params().period_ms}})
-      .input(cloud, holoscan::LatestWithin{.max_age = std::chrono::seconds{1}})
+  result.trigger(holoscan::OnClock{.period = period})
+      .input(cloud, holoscan::LatestWithin{.max_age = max_age})
       .on_missing(cloud, holoscan::Skip{});
   return result;
 }

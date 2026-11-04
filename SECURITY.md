@@ -81,8 +81,11 @@ The principal security boundaries are:
    interfaces (`0.0.0.0`) by default and accepts unauthenticated datagrams from
    any sender that can reach the port. The application drops datagrams that are
    not well-formed VLP-16 packets and bounds its receive queue, but a reachable
-   sender can still inject or flood points. Bind to the sensor-facing interface
-   with `--address` and restrict the port with host or container network policy.
+   sender can still inject or flood points. Restrict ingress to the sensor-facing
+   interface with host or container network policy. If the sensor is configured
+   to send unicast, use `--address` to bind its local destination address.
+   For broadcast traffic, keep `0.0.0.0`; on Linux, binding a local unicast address
+   prevents reception of broadcast-destination datagrams.
 
 ### Critical Security Assumptions
 

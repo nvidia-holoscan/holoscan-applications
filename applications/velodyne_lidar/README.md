@@ -42,7 +42,9 @@ Install the pinned CLI and select your SDK and matching development image once p
 shell, as described in the [repository README](../../README.md). From the repository root:
 
 `live` and `live-close` listen on UDP port 2368 on all interfaces by default and
-accept unauthenticated datagrams. Use `--address` to restrict the listener; see
+accept unauthenticated datagrams. For a sensor configured to send unicast, use
+`--address` to bind the destination address. For broadcast traffic, keep `0.0.0.0`
+and restrict ingress through host or container network policy; see
 [Live sensor](#live-sensor) and the [security threat model](../../SECURITY.md#threat-model).
 
 ```bash
@@ -64,15 +66,22 @@ By default the sensor broadcasts data packets from 192.168.1.201 to UDP port 236
 The sensor needs about 30 seconds after power-on before it sends packets.
 
 Live mode binds `0.0.0.0:2368`, which listens on every network interface.
-To listen only on the interface connected to the sensor, pass its address:
+To bind a local unicast address, first configure the sensor to send unicast to
+that host address, then pass it to the viewer:
 
 ```bash
 holoscan run velodyne_lidar live --run-args='--address 192.168.1.100'
 ```
 
+On Linux, binding a local unicast address prevents reception of broadcast-destination
+datagrams. For the sensor's default broadcast configuration, keep `--address 0.0.0.0`
+and restrict ingress to the sensor-facing interface through host or container
+network policy.
+
 Any host that can reach the port can send packets to the viewer. Datagrams that
-are not well-formed VLP-16 packets are counted and dropped. Prefer `--address`
-and a host firewall rule on shared networks; see [SECURITY.md](../../SECURITY.md).
+are not well-formed VLP-16 packets are counted and dropped. On shared networks,
+restrict the port with a host firewall rule; use `--address` only with a matching
+unicast sensor configuration. See [SECURITY.md](../../SECURITY.md).
 When running in a container, the container must be able to receive the
 sensor's UDP traffic (for example, through host networking), or run with `--local`.
 
@@ -82,8 +91,11 @@ sensor's UDP traffic (for example, through host networking), or run with `--loca
 is bundled or downloaded, so supply one first:
 
 1. Download a VLP-16 sample recording from Kitware's
-   [VeloView collection](https://www.paraview.org/veloview/#download), and
-   review its terms there. Pick a VLP-16 (Puck) recording. Packets with model byte
+   [VeloView collection](https://www.paraview.org/veloview/#download).
+   These sample recordings are distributed alongside VeloView. VeloView software
+   is licensed under [Apache-2.0](https://github.com/Kitware/VeloView/blob/master/LICENSE).
+   Contact Kitware for further guidance on using the sample data.
+   Pick a VLP-16 (Puck) recording. Packets with model byte
    `0x22` or `0x21` are decoded as VLP-16, because some VLP-16 recordings, including
    the VeloView samples, report `0x21`. Velodyne also uses `0x21` for the HDL-32E,
    which is not supported and would draw with the wrong laser angles. Other models
