@@ -105,6 +105,15 @@ the initial download, based on an observed transfer; actual time depends on netw
 throughput. Replacing an existing dataset with `--force` can temporarily require about
 29 GB because each new file is downloaded before replacing the old copy.
 
+Downloads use a 60-second network operation timeout and a two-hour deadline per file,
+including opening the connection and streaming the response. For slower networks, prepare
+manually with larger limits (in seconds):
+
+```bash
+python3 applications/bci_visualization/prepare_data.py --output data/bci_visualization \
+  --network-timeout 120 --download-deadline 14400
+```
+
 The dataset contains:
 
 - **`data.snirf`**: the recorded brain activity measurements.

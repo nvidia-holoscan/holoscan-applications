@@ -6,17 +6,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = APP_DIR / "prepare_data.py"
 sys.path.insert(0, str(APP_DIR))
 
-from prepare_data import CHECKSUMS, HEADSETS, REVISION, dataset_files
+from prepare_data import CHECKSUMS, HEADSETS, REVISION, PreparationError, dataset_files, download
 
 
 class PrepareDataTest(unittest.TestCase):
@@ -132,6 +136,76 @@ class PrepareDataTest(unittest.TestCase):
         result = self._run("--headset", "unknown")
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid choice", result.stderr)
+
+
+class DownloadTimeoutTest(unittest.TestCase):
+    def test_timeout_arguments(self):
+        from prepare_data import parse_arguments
+
+        for flag in ("--network-timeout", "--download-deadline"):
+            for value in ("0", "-1", "nan", "inf"):
+                with self.subTest(flag=flag, value=value), self.assertRaises(SystemExit):
+                    parse_arguments(["--output", "unused", flag, value])
+
+    def test_network_stalls_and_overall_deadline(self):
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                try:
+                    if self.path == "/headers":
+                        time.sleep(0.5)
+                    self.send_response(200)
+                    self.end_headers()
+                    if self.path == "/stall":
+                        time.sleep(0.5)
+                    if self.path == "/trickle":
+                        for _ in range(30):
+                            self.wfile.write(b"x")
+                            self.wfile.flush()
+                            time.sleep(0.03)
+                    else:
+                        self.wfile.write(b"x")
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                destination = Path(directory) / "data"
+                expected = {"size": 1, "sha256": hashlib.sha256(b"x").hexdigest()}
+                handler = signal.getsignal(signal.SIGALRM)
+                for route, network, deadline in (
+                    ("headers", 0.1, 2),
+                    ("stall", 0.1, 2),
+                    ("headers", 2, 0.15),
+                    ("trickle", 0.2, 0.15),
+                ):
+                    with self.subTest(route=route, deadline=deadline):
+                        destination.write_bytes(b"existing")
+                        started = time.monotonic()
+                        with self.assertRaisesRegex(PreparationError, "timed out|deadline"):
+                            download(
+                                f"http://127.0.0.1:{server.server_port}/{route}",
+                                destination,
+                                expected,
+                                network,
+                                deadline,
+                            )
+                        self.assertLess(time.monotonic() - started, 1.5)
+                        self.assertEqual(destination.read_bytes(), b"existing")
+                        self.assertEqual(list(Path(directory).iterdir()), [destination])
+                        self.assertEqual(signal.getsignal(signal.SIGALRM), handler)
+                        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
+                download(f"http://127.0.0.1:{server.server_port}/ok", destination, expected, 1, 2)
+                self.assertEqual(destination.read_bytes(), b"x")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
 
 if __name__ == "__main__":

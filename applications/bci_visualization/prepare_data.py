@@ -8,10 +8,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
+import signal
 import sys
 import tempfile
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
 DATASET_URL = "https://huggingface.co/datasets/KernelCo/holohub_bci_visualization/resolve"
@@ -44,6 +47,31 @@ class PreparationError(RuntimeError):
     """A user-facing data preparation failure."""
 
 
+def positive_seconds(value: str) -> float:
+    """Parse a finite, positive timeout in seconds."""
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("must be a positive, finite number of seconds")
+    return seconds
+
+
+@contextmanager
+def download_deadline(seconds: float):
+    """Interrupt opening or reading a response, including continuously slow responses."""
+
+    def expired(signum, frame):
+        raise TimeoutError(f"download deadline exceeded ({seconds:g} seconds)")
+
+    previous_handler = signal.signal(signal.SIGALRM, expired)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        signal.setitimer(signal.ITIMER_REAL, *previous_timer)
+
+
 def parse_arguments(arguments: list[str] | None = None) -> argparse.Namespace:
     """Build and parse the command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -58,6 +86,18 @@ def parse_arguments(arguments: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--checksums", type=Path, default=CHECKSUMS, help=argparse.SUPPRESS)
     parser.add_argument(
         "--force", action="store_true", help="download every file, even ones that match"
+    )
+    parser.add_argument(
+        "--network-timeout",
+        type=positive_seconds,
+        default=60,
+        help="network operation timeout in seconds (default: 60)",
+    )
+    parser.add_argument(
+        "--download-deadline",
+        type=positive_seconds,
+        default=7200,
+        help="overall opening and streaming deadline per file in seconds (default: 7200)",
     )
     return parser.parse_args(arguments)
 
@@ -97,13 +137,22 @@ def matches(path: Path, expected: dict[str, object]) -> bool:
     )
 
 
-def download(url: str, destination: Path, expected: dict[str, object]) -> None:
+def download(
+    url: str,
+    destination: Path,
+    expected: dict[str, object],
+    network_timeout: float = 60,
+    deadline: float = 7200,
+) -> None:
     """Download url to destination through a verified temporary file in the same directory."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as staging:
         staged = Path(staging.name)
         try:
-            with urllib.request.urlopen(url) as response:
+            with (
+                download_deadline(deadline),
+                urllib.request.urlopen(url, timeout=network_timeout) as response,
+            ):
                 shutil.copyfileobj(response, staging, CHUNK_SIZE)
         except Exception as error:
             staged.unlink(missing_ok=True)
@@ -126,7 +175,13 @@ def prepare_data(options: argparse.Namespace) -> None:
             if matches(destination, expected):
                 continue
         print(f"Downloading {remote}", flush=True)
-        download(f"{base}/{remote}", destination, expected)
+        download(
+            f"{base}/{remote}",
+            destination,
+            expected,
+            options.network_timeout,
+            options.download_deadline,
+        )
     print(f"Prepared {options.output} for headset {options.headset}")
 
 
