@@ -13,6 +13,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -23,6 +24,7 @@
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -136,12 +138,11 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
     }
     const holoscan::Tensor& tensor = *sample;
 
-    const auto element_count = static_cast<std::size_t>(tensor.nbytes()) / sizeof(float);
-    if (element_count != 2U) {
-      std::cout << "frame " << ++counter_ << ": unexpected output size (" << element_count
-                << " elements, expected 2) -- pipeline ran end-to-end but classification "
-                   "interpretation needs tuning for this model output shape\n";
-      return {};
+    const auto dtype = tensor.dtype();
+    if (dtype.code != kDLFloat || dtype.bits != 32U || dtype.lanes != 1U ||
+        tensor.nbytes() != 2U * sizeof(float)) {
+      std::cerr << "classification requires exactly two FP32 logits\n";
+      return holoscan::make_unexpected(holoscan::Error{holoscan::ErrorCode::kFailure});
     }
 
     float logits[2];
@@ -150,11 +151,17 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
       return holoscan::make_unexpected(std::move(copied).error());
     }
 
+    if (!std::isfinite(logits[0]) || !std::isfinite(logits[1])) {
+      std::cerr << "classification received non-finite logits\n";
+      return holoscan::make_unexpected(holoscan::Error{holoscan::ErrorCode::kFailure});
+    }
+
     const float in_body_confidence = 1.0F / (1.0F + std::exp(-logits[0]));
     const float out_of_body_confidence = 1.0F / (1.0F + std::exp(-logits[1]));
 
     ++counter_;
-    if (in_body_confidence > out_of_body_confidence) {
+    // Compare logits directly: sigmoid can round two large values to the same score.
+    if (logits[0] > logits[1]) {
       std::cout << "frame " << counter_ << ": Likely in-body (confidence=" << in_body_confidence
                 << ")\n";
     } else {
@@ -184,7 +191,12 @@ struct CliArgs {
     if (arg == "--config" && i + 1 < argc) {
       out.config_path = argv[++i];
     } else if (arg == "--ticks" && i + 1 < argc) {
-      out.ticks = static_cast<std::size_t>(std::stoul(argv[++i]));
+      const std::string_view value = argv[++i];
+      const auto result = std::from_chars(value.data(), value.data() + value.size(), out.ticks);
+      if (result.ec != std::errc() || result.ptr != value.data() + value.size()) {
+        std::cerr << "invalid --ticks: expected a non-negative integer (0 runs to completion)\n";
+        return false;
+      }
     } else if (arg == "--self-test") {
       out.self_test = true;
     } else {
@@ -234,6 +246,16 @@ int main(int argc, char** argv) {
         VideoFileReaderOpParams::from_yaml_node(config_root["video_source"], config_dir);
     preprocessor_params =
         TensorPreprocessorOpParams::from_yaml_node(config_root["preprocessor"], config_dir);
+    for (const auto& entry : config_root["inference"]["model_path_map"]) {
+      std::filesystem::path model_path = entry.second.as<std::string>();
+      if (model_path.is_relative()) {
+        model_path = config_dir / model_path;
+      }
+      if (!std::filesystem::is_regular_file(model_path)) {
+        std::cerr << "missing inference model: " << model_path << '\n';
+        return 1;
+      }
+    }
   } catch (const std::exception& exception) {
     std::cerr << "failed to load '" << args.config_path << "': " << exception.what() << '\n';
     return 1;
