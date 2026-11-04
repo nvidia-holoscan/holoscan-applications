@@ -95,7 +95,8 @@ python3 applications/bci_visualization/prepare_data.py --output data/bci_visuali
 ```
 
 This downloads a pinned revision of the
-[Kernel sample dataset](https://huggingface.co/datasets/KernelCo/holohub_bci_visualization):
+[Kernel sample dataset](https://huggingface.co/datasets/KernelCo/holohub_bci_visualization)
+under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0):
 the SNIRF recording (about 500 MB), the anatomy mask, and the reconstruction assets for
 the `flow_2` headset, whose channel map covers every channel in this recording. Its
 Jacobian is 14.25 GB and is loaded into GPU memory, so the GPU needs more than 14.25 GB free.
