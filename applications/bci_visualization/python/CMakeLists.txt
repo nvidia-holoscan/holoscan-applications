@@ -26,14 +26,18 @@ if(HOLOHUB_DOWNLOAD_DATASETS)
   if(NOT HOLOHUB_DATA_DIR)
     set(HOLOHUB_DATA_DIR "${CMAKE_SOURCE_DIR}/data")
   endif()
-  set(_bci_data_dir "${HOLOHUB_DATA_DIR}/bci_visualization")
-  set(_bci_data_stamp "${CMAKE_CURRENT_BINARY_DIR}/data-${BCI_VISUALIZATION_HEADSET}.stamp")
+  get_filename_component(_bci_data_dir "${HOLOHUB_DATA_DIR}/bci_visualization"
+    ABSOLUTE BASE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+  set(_bci_data_selection "${CMAKE_CURRENT_BINARY_DIR}/data-selection.txt")
+  file(CONFIGURE OUTPUT "${_bci_data_selection}"
+    CONTENT "${BCI_VISUALIZATION_HEADSET}\n${_bci_data_dir}\n" @ONLY)
+  set(_bci_data_stamp "${CMAKE_CURRENT_BINARY_DIR}/data-prepared.stamp")
   add_custom_command(
     OUTPUT ${_bci_data_stamp}
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../prepare_data.py
       --output ${_bci_data_dir} --headset ${BCI_VISUALIZATION_HEADSET}
-    COMMAND ${CMAKE_COMMAND} -E touch ${_bci_data_stamp}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../prepare_data.py
+    COMMAND ${CMAKE_COMMAND} -E copy ${_bci_data_selection} ${_bci_data_stamp}
+    DEPENDS ${_bci_data_selection} ${CMAKE_CURRENT_SOURCE_DIR}/../prepare_data.py
       ${CMAKE_CURRENT_SOURCE_DIR}/../dataset_checksums.json
     COMMENT "Downloading bci_visualization sample data to ${_bci_data_dir}"
     VERBATIM)
