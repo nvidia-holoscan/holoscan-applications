@@ -280,3 +280,17 @@ inverse problem on the GPU with CuPy, and renders the oxygenated-hemoglobin chan
 
 The render clock drains a depth-one queue of completed volumes. Input timestamps
 remain intact; slow reconstruction or initial scene setup does not expire the final frame.
+
+## Known limitation: multiple headsets and custom data
+
+The standard sample workflow uses the Flow 2 dataset and `flow_2` reconstruction assets.
+Dataset preparation writes to one shared directory and does not coordinate writes across
+build trees or detect manual changes to data after a successful build. Builds for different
+headsets that share `HOLOHUB_DATA_DIR` can overwrite each other's assets; concurrent
+preparation can mix files from different headsets. Use a separate `HOLOHUB_DATA_DIR` for
+each headset and do not prepare different headsets into the same directory concurrently.
+For manually supplied data, disable automatic downloads with
+`--configure-args="-DHOLOHUB_DOWNLOAD_DATASETS=OFF"` and provide a complete, matching set of
+recording and reconstruction assets via the application's `--data` option. Selecting
+another headset's assets does not replace the bundled Flow 2 recording with a matching
+recording.
