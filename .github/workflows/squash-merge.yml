@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Squash merge with bot assistance
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to squash and merge
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: squash-merge-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Run trusted default-branch code, never the PR's version of this helper.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # A dedicated App token lets the resulting push trigger normal CI on main.
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349  # v2
+        id: app-token
+        with:
+          app-id: ${{ vars.MERGE_APP_ID }}
+          private-key: ${{ secrets.MERGE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Squash merge with corrected attribution
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: python3 .github/scripts/squash_merge.py --pr "$PR_NUMBER" --merge
