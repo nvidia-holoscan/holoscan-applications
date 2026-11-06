@@ -136,6 +136,7 @@ class ApplicationTest(unittest.TestCase):
                         )
                         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                         self.assertIn("verdict=FAIL", result.stdout)
+                        self.assertIn("truncated pcap record header", result.stdout + result.stderr)
                         self.assertNotIn("pipeline timed out", result.stderr)
 
     @unittest.skipUnless(gpu_available(), "requires an NVIDIA GPU")
