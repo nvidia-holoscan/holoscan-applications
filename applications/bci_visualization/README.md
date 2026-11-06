@@ -199,7 +199,7 @@ The application keeps the channels that are valid in the first sample, and stops
 error that lists unmapped channels if the headset's assets don't match. Samples are shown
 as they arrive; if reconstruction falls behind, the oldest waiting samples are dropped.
 The run continues until you close the window, or for `--frames N` samples.
-Headless device simulation also exits when its recording ends. The Kernel SDK
+Device simulation also exits when its recording ends, with or without a window. The Kernel SDK
 reports errors to Kernel through Sentry unless `SENTRY_DSN_SDK` is empty, so the
 application sets it empty unless you set it yourself.
 
@@ -268,6 +268,8 @@ holoscan test bci_visualization
 
 The data preparation test needs only Python. The other tests need the packages in
 `requirements.txt`; the solver and end-to-end tests also need a GPU.
+The interactive replay completion test additionally needs an X display (`DISPLAY`);
+it is skipped when no display is available. A virtual X server such as Xvfb can be used.
 
 ## Changes from the Holoscan 4.x application
 
@@ -298,9 +300,10 @@ recording and reconstruction assets via the application's `--data` option. Selec
 another headset's assets does not replace the bundled Flow 2 recording with a matching
 recording.
 
-## Inherited reconstruction limitations
+## Inherited limitations
 
-Two limitations from the archived Holoscan 4.x application are deferred beyond this port:
+The following limitations from the archived Holoscan 4.x application are deferred beyond
+this port:
 
 - Display statistics require both extrema to be nonzero before initialization. Activity
   with only positive or only negative values alongside zero background remains hidden
@@ -310,3 +313,22 @@ Two limitations from the archived Holoscan 4.x application are deferred beyond t
 - Voxel placement subtracts the minimum rounded IJK index without adjusting the affine
   translation. Custom grids with a nonzero minimum index can therefore shift activity
   relative to the anatomy. See the [archived voxel conversion](https://github.com/nvidia-holoscan/holohub/blob/8add7cfab2617611de2718f39ffc3141260e88b5/applications/bci_visualization/operators/reconstruction/convert_to_voxels_operator.py).
+- The solver caches its regularized Hessian by wavelength index alone. Solving another
+  dataset or changing `--reg` within the same Python process can reuse the wrong matrix
+  and silently produce incorrect activity, even when the system dimensions match.
+  Start a fresh process for each dataset or regularization setting; do not call the
+  application repeatedly with different settings in one interpreter. See the
+  [archived solver cache](https://github.com/nvidia-holoscan/holohub/blob/8add7cfab2617611de2718f39ffc3141260e88b5/applications/bci_visualization/utils/reconstruction/reg_inv.py).
+- SNIRF replay defines its reference channel set from moment zero at wavelength zero.
+  A measurement whose source/detector pair is absent from that set is assigned index
+  `-1` and overwrites the last reference channel, silently corrupting activity. Use
+  recordings in which every measurement's source/detector pair is present in that
+  reference set; verify this before replaying custom recordings. See the
+  [archived SNIRF channel mapping](https://github.com/nvidia-holoscan/holohub/blob/8add7cfab2617611de2718f39ffc3141260e88b5/applications/bci_visualization/streams/snirf.py).
+- A failed headset startup can leave the receiver thread and SDK connection active
+  until process exit. The archived stream did not clean up after its first-sample
+  timeout; this port also rejects a first sample with no valid channels without
+  cleaning up the receiver. Exit the Python process after a startup failure, check
+  the headset and Kortex service, then restart in a fresh process. Do not retry startup
+  in the same interpreter. See the
+  [archived headset startup](https://github.com/nvidia-holoscan/holohub/blob/8add7cfab2617611de2718f39ffc3141260e88b5/applications/bci_visualization/streams/kernel_sdk.py).
