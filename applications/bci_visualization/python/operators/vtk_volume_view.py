@@ -42,13 +42,12 @@ class VTKVolumeViewOp(hs.Operator):
     render_hz = hs.Param(30, description="Window refresh rate.", range=(1, 240))
     width = hs.Param(1024, description="Window width in pixels.")
     height = hs.Param(768, description="Window height in pixels.")
-    headless = hs.Param(False, description="Render offscreen and stop when the replay ends.")
+    headless = hs.Param(False, description="Render offscreen.")
     simulate_drag = hs.Param(False, description="Inject a mouse drag after the first volume.")
     screenshot = hs.Param("", description="Write the last frame to this PNG file.")
     view_type = hs.Param("surface", description="'surface' or 'volume'.")
     surface_depth_mm = hs.Param(6.0, description="Depth below the surface to average over.")
     surface_texture = hs.Param(True, description="Darken sulci in the surface.")
-    stop_at_last_frame = hs.Param(False, description="Stop after the requested frame limit.")
     last_frame = hs.Param(-1, description="Frame id of the final replayed sample.")
     density_min = hs.Param(-100.0, description="Lowest displayed density.")
     density_max = hs.Param(100.0, description="Highest displayed density.")
@@ -272,7 +271,7 @@ class VTKVolumeViewOp(hs.Operator):
         if self.simulate_drag and report["volumes"] and report["camera_moved"] is None:
             report["camera_moved"] = self._simulate_drag()
         replay_done = replay_done or selection.reason is hs.SelectionReason.END_OF_STREAM
-        if self.closed or ((self.headless or self.stop_at_last_frame) and replay_done):
+        if self.closed or replay_done:
             ctx.request_stop()
 
     def _simulate_drag(self):

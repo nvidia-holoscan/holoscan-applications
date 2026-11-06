@@ -15,12 +15,23 @@ from pathlib import Path
 APP = Path(__file__).resolve().parents[1] / "python" / "bci_visualization.py"
 
 
-BACKDATED_REPLAY = """
+CHECKED_REPLAY = """
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(sys.argv.pop(1)).parent))
-import holoscan as hs
 import bci_visualization as app
+from operators.vtk_volume_view import VTKVolumeViewOp
+original_view_compute = VTKVolumeViewOp.compute
+def checked_view_compute(self, context):
+    samples = self.volume.selected_batch()
+    original_view_compute(self, context)
+    if samples and 0 <= self.last_frame <= samples[-1].metadata.frame_id:
+        print("final_frame_rendered True", flush=True)
+VTKVolumeViewOp.compute = checked_view_compute
+"""
+
+BACKDATED_REPLAY = """
+import holoscan as hs
 from operators.stream import StreamOperator
 original_compute = StreamOperator.compute
 class BackdatedContext:
@@ -33,7 +44,6 @@ class BackdatedContext:
 def backdated_compute(self, context):
     return original_compute(self, BackdatedContext(context))
 StreamOperator.compute = backdated_compute
-raise SystemExit(app.main())
 """
 
 
@@ -74,32 +84,41 @@ class ApplicationTest(unittest.TestCase):
     def test_simulated_headset_stops_at_eof_without_a_frame_limit(self) -> None:
         self._check_render(["--source", "kernel", "--simulate-device", "--frames", "0"])
 
+    @unittest.skipUnless(os.environ.get("DISPLAY"), "interactive replay needs an X display")
+    def test_interactive_replay_stops_at_eof_without_a_frame_limit(self) -> None:
+        for source in ([], ["--source", "kernel", "--simulate-device"]):
+            with self.subTest(source=source):
+                self._check_render([*source, "--frames", "0"], headless=False)
+
     def test_renders_and_finishes_with_old_capture_timestamps(self) -> None:
         for view in ("surface", "volume"):
             with self.subTest(view=view):
                 self._render(["--view", view, "--replay-rate", "realtime"], backdate=True)
 
-    def _check_render(self, options: list[str]) -> None:
+    def _check_render(self, options: list[str], *, headless: bool = True) -> None:
         for view in ("surface", "volume"):
             with self.subTest(view=view):
-                self._render([*options, "--view", view])
+                self._render([*options, "--view", view], headless=headless)
 
-    def _render(self, options: list[str], *, backdate: bool = False) -> None:
+    def _render(self, options: list[str], *, backdate: bool = False, headless: bool = True) -> None:
         import vtk
 
         with tempfile.TemporaryDirectory() as directory:
             screenshot = Path(directory) / "frame.png"
             environment = dict(os.environ)
-            environment.setdefault("VTK_DEFAULT_OPENGL_WINDOW", "vtkEGLRenderWindow")
+            environment["VTK_DEFAULT_OPENGL_WINDOW"] = (
+                "vtkEGLRenderWindow" if headless else "vtkXOpenGLRenderWindow"
+            )
             result = subprocess.run(
                 [
-                    *(
-                        [sys.executable, "-c", BACKDATED_REPLAY, str(APP)]
-                        if backdate
-                        else [sys.executable, str(APP)]
-                    ),
+                    sys.executable,
+                    "-c",
+                    CHECKED_REPLAY
+                    + (BACKDATED_REPLAY if backdate else "")
+                    + "\nraise SystemExit(app.main())",
+                    str(APP),
                     "--synthetic",
-                    "--headless",
+                    *(["--headless"] if headless else []),
                     "--frames",
                     "8",
                     *options,
@@ -118,6 +137,7 @@ class ApplicationTest(unittest.TestCase):
             volumes = re.search(r"volumes (\d+)", result.stdout)
             self.assertIsNotNone(volumes, output)
             self.assertGreater(int(volumes.group(1)), 1, output)
+            self.assertIn("final_frame_rendered True", result.stdout, output)
             self.assertIn("camera_moved True", result.stdout, output)
             self.assertIn("same_thread True", result.stdout, output)
             reader = vtk.vtkPNGReader()

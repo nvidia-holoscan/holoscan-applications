@@ -170,7 +170,6 @@ def build_graph(args, data_dir: Path) -> hs.Graph:
         view_type=args.view,
         surface_depth_mm=args.surface_depth_mm,
         surface_texture=args.surface_texture,
-        stop_at_last_frame=args.frames > 0,
         last_frame=last_frame(args, data_dir),
     )
 
