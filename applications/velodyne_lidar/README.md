@@ -114,6 +114,7 @@ python3 applications/velodyne_lidar/make_pcap.py data/velodyne/recording.pcap
 Replay keeps the recorded packet timing and skips frames that are not VLP-16 data
 packets sent to `--port` (default 2368); the final summary line reports the
 skipped count as `invalid=`. If `packets=0`, check the sensor model and port.
+Incomplete record headers or payloads terminate replay with an error.
 
 To see what a recording contains, run `vlp_inspect.py`. It reports the UDP ports,
 model and return-mode bytes, and whether the packet timing matches a VLP-16 (about

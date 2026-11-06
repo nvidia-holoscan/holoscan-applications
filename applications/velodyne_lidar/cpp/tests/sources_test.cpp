@@ -328,6 +328,50 @@ void test_pcap_reader(const std::filesystem::path& path) {
         "pcap reader reports skip reasons");
 }
 
+void test_pcap_record_boundaries(const std::filesystem::path& path) {
+  const auto boundary = std::filesystem::path(path.string() + ".boundary");
+  for (const std::uint32_t count : {0U, 1U}) {
+    for (int length = 0; length < 16; ++length) {
+      write_fixture(boundary, count);
+      {
+        std::ofstream out(boundary, std::ios::binary | std::ios::app);
+        for (int i = 0; i < length; ++i) out.put(0);
+      }
+      vl::PcapPacketReader reader(boundary.string(), vl::kDefaultPort);
+      std::array<std::uint8_t, vl::kPacketBytes> packet{};
+      std::uint64_t timestamp = 0;
+      std::uint32_t packets = 0;
+      bool truncated = false;
+      try {
+        while (reader.next(packet.data(), timestamp)) ++packets;
+      } catch (const std::runtime_error& error) {
+        truncated = std::string(error.what()) == "truncated pcap record header";
+        check(truncated, "partial header reports the specific error");
+      }
+      check(packets == count, "valid packets preceding partial header remain readable");
+      check(truncated == (length != 0), "only zero trailing header bytes are clean EOF");
+      if (length == 0 && count != 0U) {
+        reader.rewind();
+        check(reader.next(packet.data(), timestamp), "clean EOF permits rewind");
+      }
+    }
+  }
+  write_fixture(boundary, 1U);
+  std::filesystem::resize_file(boundary, std::filesystem::file_size(boundary) - 1U);
+  vl::PcapPacketReader reader(boundary.string(), vl::kDefaultPort);
+  std::array<std::uint8_t, vl::kPacketBytes> packet{};
+  std::uint64_t timestamp = 0;
+  bool truncated = false;
+  try {
+    while (reader.next(packet.data(), timestamp)) {
+    }
+  } catch (const std::runtime_error& error) {
+    truncated = std::string(error.what()) == "truncated pcap record";
+  }
+  check(truncated, "truncated payload remains an error");
+  std::filesystem::remove(boundary);
+}
+
 void test_sources(const std::filesystem::path& pcap) {
   {
     auto progress = std::make_shared<vl::RunProgress>();
@@ -457,6 +501,7 @@ int main() {
                     ("velodyne_sources_test_" + std::to_string(::getpid()) + ".pcap");
   write_fixture(pcap, 20U);
   test_pcap_reader(pcap);
+  test_pcap_record_boundaries(pcap);
   test_sources(pcap);
   std::filesystem::remove(pcap);
   std::cout << (failures == 0 ? "velodyne_sources_test: PASS\n" : "velodyne_sources_test: FAIL\n");

@@ -6,6 +6,7 @@ import importlib.util
 import math
 import pathlib
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -62,6 +63,42 @@ class PacketTest(unittest.TestCase):
 
 
 class PcapTest(unittest.TestCase):
+    def test_record_boundaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "boundary.pcap"
+            make_pcap.write_pcap(path, 1)
+            valid = path.read_bytes()
+            for prefix in (valid[:24], valid):
+                path.write_bytes(prefix)
+                expected = list(vlp_inspect.records(path))
+                for length in range(1, 16):
+                    with self.subTest(records=len(expected), trailing_bytes=length):
+                        path.write_bytes(prefix + bytes(length))
+                        records = vlp_inspect.records(path)
+                        for record in expected:
+                            self.assertEqual(next(records), record)
+                        with self.assertRaisesRegex(SystemExit, "truncated pcap record header"):
+                            next(records)
+            path.write_bytes(valid)
+            self.assertEqual(len(list(vlp_inspect.records(path))), 1)
+            path.write_bytes(valid[:-1])
+            with self.assertRaisesRegex(SystemExit, "truncated pcap record$"):
+                list(vlp_inspect.records(path))
+
+    def test_inspector_cli_rejects_partial_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "partial.pcap"
+            make_pcap.write_pcap(path, 1)
+            path.write_bytes(path.read_bytes() + bytes(7))
+            result = subprocess.run(
+                [sys.executable, str(_PATH.with_name("vlp_inspect.py")), str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f"{path}: truncated pcap record header", result.stderr)
+
     def test_inspect_raw_ip_capture(self):
         frame = make_pcap.udp_frame(make_pcap.make_packet(0), make_pcap.PORT)[14:]
         with tempfile.TemporaryDirectory() as tmp:

@@ -35,7 +35,12 @@ def records(path):
             raise SystemExit(f"{path}: not a classic pcap (pcapng? use editcap -F pcap)")
         endian, nano = _MAGIC[head[:4]]
         link = struct.unpack(endian + "I", head[20:24])[0]
-        while len(rec := f.read(16)) == 16:
+        while True:
+            rec = f.read(16)
+            if not rec:
+                break
+            if len(rec) != 16:
+                raise SystemExit(f"{path}: truncated pcap record header")
             sec, frac, captured, original = struct.unpack(endian + "IIII", rec)
             if captured > _MAX_RECORD_BYTES:
                 raise SystemExit(f"{path}: corrupt pcap record length")

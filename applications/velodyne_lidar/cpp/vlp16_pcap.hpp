@@ -101,7 +101,8 @@ class PcapPacketReader {
           break;
       }
     }
-    if (!file_.eof()) throw std::runtime_error("failed to read pcap record");
+    if (file_.bad() || !file_.eof()) throw std::runtime_error("failed to read pcap record");
+    if (file_.gcount() != 0) throw std::runtime_error("truncated pcap record header");
     return false;
   }
 

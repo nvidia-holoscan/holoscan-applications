@@ -114,6 +114,31 @@ class ApplicationTest(unittest.TestCase):
                         self.assertEqual(len(data) - len(header), 720 * 720 * 3)
 
     @unittest.skipUnless(gpu_available(), "requires an NVIDIA GPU")
+    def test_pcap_rejects_partial_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "partial.pcap"
+            make_pcap.write_pcap(path, 1)
+            valid = path.read_bytes()
+            for length in (7, 15):
+                path.write_bytes(valid + bytes(length))
+                for loop in ("false", "true"):
+                    with self.subTest(trailing_bytes=length, loop=loop):
+                        result = self.run_app(
+                            "--pcap",
+                            path,
+                            "--loop",
+                            loop,
+                            "--duration-seconds",
+                            "3",
+                            "--timeout-seconds",
+                            "5",
+                            timeout=20,
+                        )
+                        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                        self.assertIn("verdict=FAIL", result.stdout)
+                        self.assertNotIn("pipeline timed out", result.stderr)
+
+    @unittest.skipUnless(gpu_available(), "requires an NVIDIA GPU")
     def test_pcap_replay(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "room.pcap"
