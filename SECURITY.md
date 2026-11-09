@@ -76,6 +76,16 @@ The principal security boundaries are:
    GPU-intensive processing and interact with attached hardware. Unbounded
    inputs or incorrect device configuration could exhaust CPU, GPU, memory, or
    storage resources, or interfere with other workloads sharing the host.
+6. **Network listeners:** Some applications receive sensor data over the
+   network. For example, `velodyne_lidar` live mode binds UDP port 2368 on all
+   interfaces (`0.0.0.0`) by default and accepts unauthenticated datagrams from
+   any sender that can reach the port. The application drops datagrams that are
+   not well-formed VLP-16 packets and bounds its receive queue, but a reachable
+   sender can still inject or flood points. Restrict ingress to the sensor-facing
+   interface with host or container network policy. If the sensor is configured
+   to send unicast, use `--address` to bind its local destination address.
+   For broadcast traffic, keep `0.0.0.0`; on Linux, binding a local unicast address
+   prevents reception of broadcast-destination datagrams.
 
 ### Critical Security Assumptions
 

@@ -2,5 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Keep applications in alphabetical order.
+add_holoscan_application(bci_visualization)
 add_holoscan_application(endoscopy_tool_tracking)
 add_holoscan_application(surgical_deidentification)
+add_holoscan_application(velodyne_lidar)
