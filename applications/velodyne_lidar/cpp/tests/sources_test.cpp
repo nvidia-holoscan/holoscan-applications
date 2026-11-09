@@ -18,6 +18,9 @@
 
 // Source-operator and host decoding checks. The graphs use only host tensors.
 
+#include <arpa/inet.h>   // NOLINT(build/include_order)
+#include <netinet/in.h>  // NOLINT(build/include_order)
+#include <sys/socket.h>  // NOLINT(build/include_order)
 #include <unistd.h>
 
 #include <array>
@@ -37,14 +40,11 @@
 #include <utility>
 #include <vector>
 
-#include <arpa/inet.h>  // NOLINT(build/include_order)
 #include <holoscan/core/compile.hpp>
 #include <holoscan/core/connection_options.hpp>
 #include <holoscan/core/graph.hpp>
 #include <holoscan/core/run.hpp>
 #include <holoscan/time/realtime_clock.hpp>
-#include <netinet/in.h>  // NOLINT(build/include_order)
-#include <sys/socket.h>  // NOLINT(build/include_order)
 
 #include "vlp16_packet.hpp"
 #include "vlp16_pcap.hpp"
