@@ -47,7 +47,18 @@ flowchart LR
 
 The ONNX model and sample MP4 are fetched by CMake from the public
 [NGC endoscopy_out_of_body_detection](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara-holoscan/resources/endoscopy_out_of_body_detection)
-resource. Two ways:
+resource. **Downloaded artifacts are subject to the NGC resource's own license and
+terms of use** — see the [resource page](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara-holoscan/resources/endoscopy_out_of_body_detection)
+license tab and [NVIDIA AI Foundation Models Community License](https://developer.nvidia.com/downloads/nv-ai-foundation-models-license);
+by invoking the download target you accept those terms.
+
+> **Download integrity warning:** the fetched archive is verified with the SHA-256
+> stored in `cmake/DownloadData.cmake` (`SURGICAL_DEID_NGC_SHA256`). If that value
+> is empty, the download runs without integrity verification and a tampered or
+> substituted archive could end up in the inference pipeline; populate it with the
+> published SHA-256 before using the download target in untrusted environments.
+
+Two ways:
 
 - **Chain into the build** (one-shot): configure with `-DSURGICAL_DEID_DOWNLOAD_DATA=ON`
   and the `de_id` target depends on the download target, so the dataset lands as part
@@ -95,7 +106,7 @@ end-to-end without copying files. Any other layout works too — just edit
 # One-time: build the image and project, fetching the NGC dataset into <repository>/data/
 # so the Holoscan CLI's default data directory lines up with the stock config.yaml.
 holoscan build surgical_deidentification \
-    --build-args="-DHOLOHUB_DATA_DIR=$PWD/data -DSURGICAL_DEID_DOWNLOAD_DATA=ON"
+    --configure-args="-DHOLOHUB_DATA_DIR=$PWD/data -DSURGICAL_DEID_DOWNLOAD_DATA=ON"
 
 # Each run: mount the dataset directory at /data and launch.
 holoscan run surgical_deidentification \
@@ -170,7 +181,8 @@ The CLI forwards everything after `--run-args` straight to the `de_id` binary.
 |------------------------|----------------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | `--config <path.yaml>` | `<holohub_app_bin>/config.yaml` (shipped alongside the binary) | Path to the YAML configuration file.                                                        |
 | `--ticks <N>`          | `0` (unbounded — runs until EOF)                               | Stop after `N` sink activations. Useful for benchmarking.                                   |
-| `--self-test`          | (off)                                                          | Load dynamic libraries, print `de_id self-test ok`, exit 0. Used by the metadata `ci` mode. |
+| `--self-test`          | (off)                                                          | Load dynamic libraries, print `de_id self-test ok`, exit 0.                                 |
+| `--ci-ticks <N>`       | (off)                                                          | Run a bounded synthetic reader-only pipeline for N ticks. Used by the metadata `ci` mode.   |
 
 Examples:
 

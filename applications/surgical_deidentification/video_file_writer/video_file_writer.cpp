@@ -25,6 +25,7 @@ extern "C" {
 #include <vector>
 
 #include <holoscan/core/graph.hpp>
+#include <holoscan/logger/logger.hpp>
 
 namespace holoscan::ops {
 
@@ -327,16 +328,27 @@ expected<void, Error> VideoFileWriterOp::send_and_drain(AVFrame* frame) {
 }
 
 void VideoFileWriterOp::stop() {
+  const auto& config = params();
   if (codec_ctx_ != nullptr && header_written_) {
     // Flush: send a null frame and drain every packet the encoder was still buffering.
     auto flushed = send_and_drain(nullptr);
     if (!flushed) {
-      // Log-equivalent best effort is to just proceed to trailer/close so the file is still
-      // finalized.
+      finalize_failed_ = true;
+      HOLOSCAN_LOG_ERROR(
+          "VideoFileWriterOp: failed to flush buffered frames to '{}'; output may be truncated: {}",
+          config.path.string(), flushed.error().message);
     }
   }
   if (format_ctx_ != nullptr && header_written_) {
-    av_write_trailer(format_ctx_);
+    const int trailer_ret = av_write_trailer(format_ctx_);
+    if (trailer_ret < 0) {
+      finalize_failed_ = true;
+      char errbuf[AV_ERROR_MAX_STRING_SIZE] = {};
+      av_strerror(trailer_ret, errbuf, sizeof(errbuf));
+      HOLOSCAN_LOG_ERROR(
+          "VideoFileWriterOp: av_write_trailer failed for '{}'; output may be unreadable: {}",
+          config.path.string(), errbuf);
+    }
   }
   if (format_ctx_ != nullptr && format_ctx_->pb != nullptr &&
       !(format_ctx_->oformat->flags & AVFMT_NOFILE)) {
@@ -408,6 +420,28 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
                   ") does not match width*height*channels for the configured input_pix_fmt/width/"
                   "height (" +
                   std::to_string(expected_elements * element_bytes) + ")"});
+  }
+
+  // Guard against same-byte-count but wrong-shape tensors (e.g. swapped H/W). Trailing dims
+  // under NHWC are [..., H, W, C]; under NCHW are [..., C, H, W]. strip_batch_dim is irrelevant
+  // here because we read from the trailing side.
+  const auto& shape = tensor.shape();
+  if (shape.size() >= 3U) {
+    const std::size_t rank = shape.size();
+    const int64_t actual_h = nchw ? shape[rank - 2U] : shape[rank - 3U];
+    const int64_t actual_w = nchw ? shape[rank - 1U] : shape[rank - 2U];
+    const int64_t actual_c = nchw ? shape[rank - 3U] : shape[rank - 1U];
+    if (actual_h != static_cast<int64_t>(height) || actual_w != static_cast<int64_t>(width) ||
+        actual_c != static_cast<int64_t>(channels)) {
+      return make_unexpected(
+          Error{ErrorCode::kInvalidArgument,
+                "VideoFileWriterOp: received Tensor shape does not match configured "
+                "width/height/channels for input_layout='" +
+                    config.input_layout + "': got H=" + std::to_string(actual_h) +
+                    " W=" + std::to_string(actual_w) + " C=" + std::to_string(actual_c) +
+                    ", expected H=" + std::to_string(height) + " W=" + std::to_string(width) +
+                    " C=" + std::to_string(channels)});
+    }
   }
 
   hwc_u8_buffer_.resize(height * width * channels);

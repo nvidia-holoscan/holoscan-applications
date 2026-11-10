@@ -406,9 +406,11 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
   const VideoFileReaderOpParams& config = params();
 
   if (config.frame_count > 0 && frames_emitted_ >= config.frame_count) {
+    context.request_stop();
     return {};
   }
   if (eos_reached_ && !config.loop) {
+    context.request_stop();
     return {};
   }
 
@@ -451,6 +453,7 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
       }
     } else {
       eos_reached_ = true;
+      context.request_stop();
       return {};
     }
   }

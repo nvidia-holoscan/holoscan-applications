@@ -32,7 +32,7 @@
 #include <holoscan/core/temporal_contract.hpp>
 #include <holoscan/time/realtime_clock.hpp>
 
-#include "synthetic_mp4.hpp"
+#include "../synthetic_mp4.hpp"
 #include "video_file_reader.hpp"
 
 namespace holoscan::ops {

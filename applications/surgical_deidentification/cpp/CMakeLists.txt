@@ -17,6 +17,10 @@ endif()
 
 find_package(holoscan 5.0 REQUIRED CONFIG COMPONENTS inference)
 find_package(yaml-cpp REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(DEID_AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+pkg_check_modules(DEID_AVCODEC  REQUIRED IMPORTED_TARGET libavcodec)
+pkg_check_modules(DEID_AVUTIL   REQUIRED IMPORTED_TARGET libavutil)
 
 if(NOT DEFINED HOLOHUB_DATA_DIR)
     set(HOLOHUB_DATA_DIR "${CMAKE_BINARY_DIR}/data"
@@ -38,6 +42,9 @@ target_link_libraries(de_id
         holoscan::op_tensor_preprocessor
         holoscan::op_video_file_reader
         yaml-cpp::yaml-cpp
+        PkgConfig::DEID_AVFORMAT
+        PkgConfig::DEID_AVCODEC
+        PkgConfig::DEID_AVUTIL
 )
 set_target_properties(de_id PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."

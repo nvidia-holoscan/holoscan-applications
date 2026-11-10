@@ -43,8 +43,7 @@ namespace holoscan::ops {
 /**
  * @brief Compile-time-authored configuration for VideoFileWriterOp.
  *
- * Mirrors RawTensorWriterOpParams (see raw_tensor_writer.hpp) and is VideoFileReaderOpParams's
- * dual: instead of a flat `.raw` file, received Tensor frames are resampled via libswscale and
+ * Dual of VideoFileReaderOpParams: received Tensor frames are resampled via libswscale and
  * encoded into a compressed video container via libavcodec/libavformat.
  */
 struct VideoFileWriterOpParams {
@@ -92,7 +91,7 @@ struct VideoFileWriterOpParams {
    *
    * ```yaml
    * tensor_sinks:
-   *   - type: video_file                 # required discriminant (see holoinfer_example.cpp)
+   *   - type: video_file                 # required discriminant
    *     path: ../data/output_video.mp4    # required; resolved relative to config_dir if relative
    *     tensor_port_name: tensor_out       # default: "frame"
    *     codec: mpeg4                       # default: "mpeg4"
@@ -121,11 +120,9 @@ struct VideoFileWriterOpParams {
  * @brief Receive tensor frames, resample via libswscale, and encode them into a compressed video
  * file via libavcodec/libavformat.
  *
- * The compressed-video dual of RawTensorWriterOp. Pairs with VideoFileReaderOp
- * (video_file_reader.hpp) for a real-video-in -> InferenceOp -> real-video-out pipeline (see
- * examples/holoinfer/README.md's config 10 walkthrough). Unlike the raw `.raw` round trip in
- * config 09, this path is not byte-exact: video codecs are lossy (or, even for a lossless codec
- * like `ffv1`, the container/timestamp bytes still differ run to run).
+ * Pairs with VideoFileReaderOp (video_file_reader.hpp) for a real-video-in -> InferenceOp ->
+ * real-video-out pipeline. This path is not byte-exact: video codecs are lossy (or, even for a
+ * lossless codec like `ffv1`, the container/timestamp bytes still differ run to run).
  */
 class VideoFileWriterOp : public holoscan::Operator<VideoFileWriterOpParams> {
  public:
@@ -151,6 +148,10 @@ class VideoFileWriterOp : public holoscan::Operator<VideoFileWriterOpParams> {
   /// `params().tensor_port_name`).
   [[nodiscard]] Input<Tensor>* input_port() const { return &input_; }
 
+  /// @brief True if stop() hit a flush or trailer failure; the output file may be truncated or
+  /// unreadable.
+  [[nodiscard]] bool finalize_failed() const { return finalize_failed_; }
+
  private:
   // Mutable so the const input_port() accessor (needed because graph.op<>() returns a
   // const-qualified OperatorHandle -- see RawTensorWriterOp::input_port() for the identical
@@ -172,6 +173,7 @@ class VideoFileWriterOp : public holoscan::Operator<VideoFileWriterOpParams> {
 
   int32_t frames_written_{};
   int64_t next_pts_{};
+  bool finalize_failed_{};
 
   /// @brief Send one frame to the encoder and drain every packet it returns via
   /// av_interleaved_write_frame(). Also used by stop() with `frame == nullptr` to flush.
