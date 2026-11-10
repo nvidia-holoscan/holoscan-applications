@@ -405,12 +405,16 @@ expected<bool, Error> VideoFileReaderOp::decode_one_frame() {
 expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
   const VideoFileReaderOpParams& config = params();
 
-  if (config.frame_count > 0 && frames_emitted_ >= config.frame_count) {
-    context.request_stop();
-    return {};
-  }
-  if (eos_reached_ && !config.loop) {
-    context.request_stop();
+  // Give downstream operators a window of idle ticks to drain their queues before closing the
+  // run — request_stop closes the callback-admission gate immediately, so queued frames at the
+  // classifier would otherwise be dropped.
+  constexpr int32_t kEosDrainTicks = 32;
+  const bool reached_frame_cap = config.frame_count > 0 && frames_emitted_ >= config.frame_count;
+  const bool reached_eos = eos_reached_ && !config.loop;
+  if (reached_frame_cap || reached_eos) {
+    if (++eos_drain_ticks_ >= kEosDrainTicks) {
+      context.request_stop();
+    }
     return {};
   }
 
@@ -453,7 +457,6 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
       }
     } else {
       eos_reached_ = true;
-      context.request_stop();
       return {};
     }
   }

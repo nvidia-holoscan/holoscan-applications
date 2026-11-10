@@ -13,6 +13,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -173,6 +174,33 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
   int counter_{};
 };
 
+class CiDropSink final : public holoscan::Operator<> {
+ public:
+  void setup(holoscan::OperatorSpec& spec) override {
+    spec.input(input, "in")
+        .queue_depth(4U)
+        .expects_tensor(holoscan::TensorInputSpec{
+            .representation =
+                holoscan::TensorRepresentation{.memory_kind = holoscan::MemoryKind::kCudaDevice}});
+  }
+  [[nodiscard]] holoscan::Contract contract() const override {
+    holoscan::Contract result;
+    result.trigger(holoscan::OnEach{input});
+    return result;
+  }
+  [[nodiscard]] holoscan::expected<void, holoscan::Error> compute(
+      holoscan::ExecutionContext& /*context*/) override {
+    auto sample = input.receive_data();
+    if (!sample) {
+      return holoscan::make_unexpected(std::move(sample).error());
+    }
+    received.fetch_add(1, std::memory_order_relaxed);
+    return {};
+  }
+  holoscan::Input<holoscan::Tensor> input;
+  static inline std::atomic<std::size_t> received{0};
+};
+
 struct CliArgs {
   std::string config_path;
   std::size_t ticks = 0U;
@@ -219,32 +247,7 @@ struct CliArgs {
   reader_params.frame_count = static_cast<int32_t>(ticks);
   reader_params.loop = false;
 
-  class CiDropSink final : public holoscan::Operator<> {
-   public:
-    void setup(holoscan::OperatorSpec& spec) override {
-      spec.input(input, "in")
-          .queue_depth(4U)
-          .expects_tensor(
-              holoscan::TensorInputSpec{.representation = holoscan::TensorRepresentation{
-                                            .memory_kind = holoscan::MemoryKind::kCudaDevice}});
-    }
-    [[nodiscard]] holoscan::Contract contract() const override {
-      holoscan::Contract result;
-      result.trigger(holoscan::OnEach{input});
-      return result;
-    }
-    [[nodiscard]] holoscan::expected<void, holoscan::Error> compute(
-        holoscan::ExecutionContext& /*context*/) override {
-      auto sample = input.receive_data();
-      if (!sample) {
-        return holoscan::make_unexpected(std::move(sample).error());
-      }
-      ++received;
-      return {};
-    }
-    holoscan::Input<holoscan::Tensor> input;
-    std::size_t received{};
-  };
+  CiDropSink::received.store(0, std::memory_order_relaxed);
 
   try {
     holoscan::Graph graph{"de_id_ci"};
@@ -275,7 +278,13 @@ struct CliArgs {
     return 1;
   }
   std::filesystem::remove(tmp_mp4);
-  std::cout << "de_id ci-pipeline ok (" << ticks << " ticks)\n";
+  const std::size_t delivered = CiDropSink::received.load(std::memory_order_relaxed);
+  if (delivered < ticks) {
+    std::cerr << "de_id --ci-ticks: sink received " << delivered << " of " << ticks
+              << " expected frames\n";
+    return 2;
+  }
+  std::cout << "de_id ci-pipeline ok (" << delivered << " ticks delivered)\n";
   return 0;
 }
 

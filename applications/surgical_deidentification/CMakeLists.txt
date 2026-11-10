@@ -13,13 +13,20 @@ endif()
 
 # CPU-only operator unit tests (schema / YAML round-trip). Build whenever CTest is enabled
 # so they are reachable by hosted CI, which runs with HOLOHUB_BUILD_CPP=OFF and does not
-# otherwise configure the cpp/ subdirectory.
+# otherwise configure the cpp/ subdirectory. Hosted runners without the Holoscan SDK installed
+# skip this block entirely rather than failing configure.
 if(BUILD_TESTING AND NOT HOLOHUB_BUILD_CPP)
     enable_language(CXX)
-    find_package(holoscan 5.0 REQUIRED CONFIG COMPONENTS inference)
-    find_package(yaml-cpp REQUIRED)
-    add_subdirectory(video_file_reader "${CMAKE_CURRENT_BINARY_DIR}/video_file_reader_ci")
-    add_subdirectory(video_file_writer "${CMAKE_CURRENT_BINARY_DIR}/video_file_writer_ci")
+    find_package(holoscan 5.0 QUIET CONFIG COMPONENTS inference)
+    find_package(yaml-cpp QUIET)
+    if(holoscan_FOUND AND yaml-cpp_FOUND)
+        add_subdirectory(video_file_reader "${CMAKE_CURRENT_BINARY_DIR}/video_file_reader_ci")
+        add_subdirectory(video_file_writer "${CMAKE_CURRENT_BINARY_DIR}/video_file_writer_ci")
+    else()
+        message(STATUS
+            "surgical_deidentification: Holoscan SDK or yaml-cpp not found; "
+            "skipping CPU operator unit tests.")
+    endif()
 endif()
 
 install(FILES README.md LICENSE DESTINATION share/surgical_deidentification)
