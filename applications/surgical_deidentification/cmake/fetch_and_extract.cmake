@@ -15,7 +15,7 @@ if(NOT DEFINED EXPECTED_SHA256 OR EXPECTED_SHA256 STREQUAL "")
 endif()
 
 string(SHA256 _url_hash "${URL}")
-set(_stamp_token "${VERSION}:${_url_hash}")
+set(_stamp_token "${VERSION}:${_url_hash}:${EXPECTED_SHA256}")
 
 if(EXISTS "${STAMP}")
     file(READ "${STAMP}" _stamped_token)
