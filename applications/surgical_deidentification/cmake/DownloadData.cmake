@@ -4,6 +4,12 @@
 set(SURGICAL_DEID_NGC_VERSION "20230127"
     CACHE STRING "NGC endoscopy_out_of_body_detection version")
 
+# SHA-256 of the NGC archive for version 20230127. Update together with
+# SURGICAL_DEID_NGC_VERSION / SURGICAL_DEID_NGC_URL. Leave empty to skip verification
+# (not recommended for distributed builds).
+set(SURGICAL_DEID_NGC_SHA256 ""
+    CACHE STRING "Expected SHA-256 of the NGC archive (empty disables verification)")
+
 set(_sd_default_url
     "https://api.ngc.nvidia.com/v2/resources/nvidia/clara-holoscan/endoscopy_out_of_body_detection/versions/${SURGICAL_DEID_NGC_VERSION}/zip")
 if(NOT DEFINED CACHE{SURGICAL_DEID_NGC_URL}
@@ -28,6 +34,7 @@ add_custom_command(
             -DARCHIVE=${_sd_archive}
             -DDEST=${_sd_data_root}
             -DVERSION=${SURGICAL_DEID_NGC_VERSION}
+            -DEXPECTED_SHA256=${SURGICAL_DEID_NGC_SHA256}
             -DSTAMP=${_sd_stamp}
             -DMP4=${_sd_mp4}
             -DONNX=${_sd_onnx}
