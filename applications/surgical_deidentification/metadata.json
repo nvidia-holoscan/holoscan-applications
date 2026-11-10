@@ -44,9 +44,9 @@
         }
       },
       "ci": {
-        "description": "Finite, headless, non-interactive self-test with no external dataset. Loads the Holoscan dynamic libraries and exits 0 — exercises the build and dependency surface without requiring the NGC data mount or GPU access.",
+        "description": "Finite, headless, non-interactive bounded run with no external dataset. Encodes a short synthetic MP4 in-process and drives VideoFileReaderOp through a drop-sink pipeline for a fixed number of ticks — exercises the Holoscan runtime, FFmpeg decode path, and operator lifecycle without the NGC data mount or GPU inference.",
         "run": {
-          "command": "\"<holohub_app_bin>/de_id\" --self-test",
+          "command": "\"<holohub_app_bin>/de_id\" --ci-ticks 5",
           "workdir": "holohub_app_bin"
         }
       }

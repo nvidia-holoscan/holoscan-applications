@@ -40,6 +40,7 @@
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
 #include <holoscan/time/realtime_clock.hpp>
 
+#include "synthetic_mp4.hpp"
 #include "video_file_reader.hpp"
 
 namespace {
@@ -52,8 +53,8 @@ using holoscan::ops::VideoFileReaderOp;
 using holoscan::ops::VideoFileReaderOpParams;
 
 // -----------------------------------------------------------------------------------------------
-// RunObservation: mirrors holoinfer_example.cpp's helper of the same name -- records one
-// wall-clock timestamp per printed classification, so main() knows when the run is done.
+// RunObservation: records one wall-clock timestamp per printed classification, so main()
+// knows when the run is done.
 // -----------------------------------------------------------------------------------------------
 
 struct RunObservation {
@@ -176,6 +177,7 @@ struct CliArgs {
   std::string config_path;
   std::size_t ticks = 0U;
   bool self_test = false;
+  std::size_t ci_ticks = 0U;
 };
 
 [[nodiscard]] bool parse_args(int argc, char** argv, CliArgs& out) {
@@ -187,12 +189,94 @@ struct CliArgs {
       out.ticks = static_cast<std::size_t>(std::stoul(argv[++i]));
     } else if (arg == "--self-test") {
       out.self_test = true;
+    } else if (arg == "--ci-ticks" && i + 1 < argc) {
+      out.ci_ticks = static_cast<std::size_t>(std::stoul(argv[++i]));
     } else {
       std::cerr << "unrecognized argument: " << arg << '\n';
       return false;
     }
   }
-  return out.self_test || !out.config_path.empty();
+  return out.self_test || out.ci_ticks > 0U || !out.config_path.empty();
+}
+
+[[nodiscard]] int run_ci_pipeline(std::size_t ticks) {
+  const auto tmp_mp4 = std::filesystem::temp_directory_path() / "de_id_ci_synthetic.mp4";
+  try {
+    surgical_deid::test::encode_synthetic_mp4(tmp_mp4.string(), /*width=*/128, /*height=*/128,
+                                              /*frame_count=*/static_cast<int>(ticks) + 10, 25);
+  } catch (const std::exception& exception) {
+    std::cerr << "de_id --ci-ticks: failed to encode synthetic MP4: " << exception.what() << '\n';
+    return 1;
+  }
+
+  VideoFileReaderOpParams reader_params;
+  reader_params.path = tmp_mp4;
+  reader_params.tensor_port_name = "frame";
+  reader_params.output_pix_fmt = "rgb24";
+  reader_params.output_layout = "nhwc";
+  reader_params.prepend_batch_dim = false;
+  reader_params.memory_kind = holoscan::MemoryKind::kCudaDevice;
+  reader_params.frame_count = static_cast<int32_t>(ticks);
+  reader_params.loop = false;
+
+  class CiDropSink final : public holoscan::Operator<> {
+   public:
+    void setup(holoscan::OperatorSpec& spec) override {
+      spec.input(input, "in")
+          .queue_depth(4U)
+          .expects_tensor(
+              holoscan::TensorInputSpec{.representation = holoscan::TensorRepresentation{
+                                            .memory_kind = holoscan::MemoryKind::kCudaDevice}});
+    }
+    [[nodiscard]] holoscan::Contract contract() const override {
+      holoscan::Contract result;
+      result.trigger(holoscan::OnEach{input});
+      return result;
+    }
+    [[nodiscard]] holoscan::expected<void, holoscan::Error> compute(
+        holoscan::ExecutionContext& /*context*/) override {
+      auto sample = input.receive_data();
+      if (!sample) {
+        return holoscan::make_unexpected(std::move(sample).error());
+      }
+      ++received;
+      return {};
+    }
+    holoscan::Input<holoscan::Tensor> input;
+    std::size_t received{};
+  };
+
+  try {
+    holoscan::Graph graph{"de_id_ci"};
+    const auto reader = graph.op<VideoFileReaderOp>("reader", reader_params);
+    const auto sink = graph.op<CiDropSink>("sink");
+    graph.add_flow(*reader->output_port(), sink->input,
+                   holoscan::ConnectionOptions{.queue_depth = 4U});
+    graph.set_default_clock(graph.add_clock<holoscan::RealtimeClock>("clock"));
+
+    holoscan::CompileOptions options;
+    options.deployment.bind_tensor_output_device(holoscan::TensorOutputDevicePlacement{
+        .operator_path = "reader",
+        .output_port = reader_params.tensor_port_name,
+        .device = holoscan::DeviceId{0},
+    });
+
+    const holoscan::ExecutionPlan plan = holoscan::compile(graph, std::move(options));
+    if (!plan.ok()) {
+      std::cerr << plan.json() << '\n';
+      std::filesystem::remove(tmp_mp4);
+      return 1;
+    }
+    holoscan::RunSession session = holoscan::run_async(plan);
+    session.wait();
+  } catch (const std::exception& exception) {
+    std::cerr << "de_id --ci-ticks: pipeline error: " << exception.what() << '\n';
+    std::filesystem::remove(tmp_mp4);
+    return 1;
+  }
+  std::filesystem::remove(tmp_mp4);
+  std::cout << "de_id ci-pipeline ok (" << ticks << " ticks)\n";
+  return 0;
 }
 
 }  // namespace
@@ -200,13 +284,17 @@ struct CliArgs {
 int main(int argc, char** argv) {
   CliArgs args;
   if (!parse_args(argc, argv, args)) {
-    std::cerr << "usage: de_id --config <path.yaml> [--ticks N] | --self-test\n";
+    std::cerr << "usage: de_id --config <path.yaml> [--ticks N] | --self-test | --ci-ticks N\n";
     return 1;
   }
 
   if (args.self_test) {
     std::cout << "de_id self-test ok\n";
     return 0;
+  }
+
+  if (args.ci_ticks > 0U) {
+    return run_ci_pipeline(args.ci_ticks);
   }
 
   YAML::Node config_root;
