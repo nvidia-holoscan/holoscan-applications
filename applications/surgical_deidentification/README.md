@@ -1,6 +1,6 @@
 # Surgical De-identification Demo: In-body / Out-of-body Surgical-Video Classifier
 
-A end-to-end Holoscan pipeline that reads a surgical procedure video, resizes and
+An end-to-end Holoscan pipeline that reads a surgical procedure video, resizes and
 normalizes each frame on the GPU, runs a binary classifier that labels the frame as `in-body`
 or `out-of-body`, and prints the result to stdout.
 
@@ -77,8 +77,9 @@ and no longer skips.
 
 ### Software
 
-- **Holoscan SDK ≥ 5.0.0**. The baked Dockerfile pulls a Holoscan SDK 5.x container from
-  NGC; nothing further to install on the host.
+- **Holoscan SDK ≥ 5.0.0**. The shipped Dockerfile leaves `BASE_IMAGE` unset by design; the
+  Holoscan CLI supplies it from `--base-img` or the `HOLOSCAN_CLI_BASE_IMAGE` environment
+  variable (set below), so nothing further needs installing on the host.
 
 ### Model and Sample Data
 
@@ -162,15 +163,20 @@ holoscan run surgical_deidentification \
 After the TensorRT engine builds on first run, the pipeline prints:
 
 ```text
-[info] Engine file missing at /data/de_id/model/de_id.<...>.engine.fp16. Starting generation process.
+[info] Engine file missing at /data/endoscopy_out_of_body_detection/out_of_body_detection.<...>.engine.fp16. Starting generation process.
 [info] Engine generation completed in 5.867 seconds.
-in-body
-in-body
-out-of-body
+frame 1: Likely in-body (confidence=0.9873)
+frame 2: Likely in-body (confidence=0.9821)
+frame 3: Likely out-of-body (confidence=0.6412)
 ...
-Summary: 100 ticks in 2318.4 ms
-Per-tick delta (µs) — samples=94 (post-warmup)
-  min=16.3 p50=18.1 mean=19.2 p90=22.4 p95=24.0 p99=29.7 max=31.5 stddev=2.1
+
+InferenceTiming (steady-state, warmup=10 ticks skipped):
+  samples : 89
+  min ms  : 16.3
+  mean ms : 19.2
+  p50 ms  : 18.1
+  p99 ms  : 29.7
+  max ms  : 31.5
 ```
 
 #### Command-line options
