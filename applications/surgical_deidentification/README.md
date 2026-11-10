@@ -224,6 +224,32 @@ The CLI ships `config.yaml` alongside the installed `de_id` binary. To swap in a
 different config without rebuilding, mount it over the installed one at run time as
 shown in the examples above, or edit `config.yaml` in the checkout and rebuild.
 
+## Tests and CI
+
+The application ships three tiers of tests, registered with CTest. The tier that runs depends
+on how the project is configured.
+
+| Tier               | Count | Needs Holoscan SDK | Needs NGC dataset | Label           |
+|--------------------|------:|--------------------|-------------------|-----------------|
+| YAML / schema unit |    24 | yes                | no                | `cpu;unit`      |
+| Operator runtime   |     5 | yes                | no                | `gpu;runtime`   |
+| de_id binary smoke |     1 | yes                | no                | `cpu;smoke`     |
+| de_id binary e2e   |     1 | yes                | yes               | `gpu;functional`|
+
+Running `ctest` against a full build (`HOLOHUB_BUILD_CPP=ON -DBUILD_TESTING=ON
+-DSURGICAL_DEID_DOWNLOAD_DATA=ON`) exercises all 31 tests, including a real TensorRT inference
+pass over the NGC `endoscopy_out_of_body_detection` model and clip. Without the dataset, the
+e2e test returns CTest's skip code (`77`) and the remaining 30 still run.
+
+Hosted CI (`HOLOHUB_BUILD_CPP=OFF -DBUILD_TESTING=ON`) skips the `de_id` binary and runs the 23
+CPU / runtime operator tests directly from the top-level `CMakeLists.txt`. If the Holoscan SDK
+is not installed on the runner, the block is skipped entirely with a `message(STATUS …)` note
+and configure still succeeds.
+
+The `ci` run mode registered in `metadata.json` invokes `de_id --ci-ticks 5`: it encodes a
+short synthetic MP4 in-process and drives `VideoFileReaderOp` through a drop-sink pipeline for
+five frames, exiting non-zero if the sink receives fewer than requested.
+
 ## Compliance and codec licensing
 
 This application distributes **source code only** and depends on third-party video codecs
