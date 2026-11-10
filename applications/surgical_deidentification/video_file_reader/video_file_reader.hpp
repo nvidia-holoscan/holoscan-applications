@@ -191,6 +191,7 @@ class VideoFileReaderOp : public holoscan::Operator<VideoFileReaderOpParams> {
 
   int32_t frames_emitted_{};
   bool eos_reached_{};
+  int32_t eos_drain_ticks_{};
   std::chrono::steady_clock::time_point next_emit_time_{};
   bool have_next_emit_time_{};
 
