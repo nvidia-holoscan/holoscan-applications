@@ -152,8 +152,12 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
       return holoscan::make_unexpected(std::move(copied).error());
     }
 
-    const float in_body_confidence = 1.0F / (1.0F + std::exp(-logits[0]));
-    const float out_of_body_confidence = 1.0F / (1.0F + std::exp(-logits[1]));
+    const float max_logit = std::max(logits[0], logits[1]);
+    const float exp0 = std::exp(logits[0] - max_logit);
+    const float exp1 = std::exp(logits[1] - max_logit);
+    const float sum_exp = exp0 + exp1;
+    const float in_body_confidence = exp0 / sum_exp;
+    const float out_of_body_confidence = exp1 / sum_exp;
 
     ++counter_;
     if (in_body_confidence > out_of_body_confidence) {
@@ -209,16 +213,30 @@ struct CliArgs {
 };
 
 [[nodiscard]] bool parse_args(int argc, char** argv, CliArgs& out) {
+  const auto parse_unsigned = [](const char* arg_name, const char* value,
+                                 std::size_t& dst) -> bool {
+    try {
+      dst = static_cast<std::size_t>(std::stoul(value));
+      return true;
+    } catch (const std::exception&) {
+      std::cerr << arg_name << " requires a non-negative integer (got '" << value << "')\n";
+      return false;
+    }
+  };
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg = argv[i];
     if (arg == "--config" && i + 1 < argc) {
       out.config_path = argv[++i];
     } else if (arg == "--ticks" && i + 1 < argc) {
-      out.ticks = static_cast<std::size_t>(std::stoul(argv[++i]));
+      if (!parse_unsigned("--ticks", argv[++i], out.ticks)) {
+        return false;
+      }
     } else if (arg == "--self-test") {
       out.self_test = true;
     } else if (arg == "--ci-ticks" && i + 1 < argc) {
-      out.ci_ticks = static_cast<std::size_t>(std::stoul(argv[++i]));
+      if (!parse_unsigned("--ci-ticks", argv[++i], out.ci_ticks)) {
+        return false;
+      }
     } else {
       std::cerr << "unrecognized argument: " << arg << '\n';
       return false;
