@@ -72,10 +72,10 @@ struct VideoFileReaderOpParams {
   /// When `true`, prepend a leading extent of `1` to the emitted Tensor's shape (a batch
   /// dimension), matching InferenceOp's typical `[1, C, H, W]` / `[1, H, W, C]` expectation.
   bool prepend_batch_dim{true};
-  /// DLPack element type of the emitted Tensor. Derived from `output_pix_fmt` by
-  /// `from_yaml_node()` (uint8 for `*_u8`/`rgb24`/`bgr24`, float32 for `*_fp32`). Callers
-  /// constructing the params in code may set this field directly; there is no `output_dtype:`
-  /// YAML key.
+  /// DLPack element type of the emitted Tensor. **Informational / derived** — populated by
+  /// `from_yaml_node()` from `output_pix_fmt` (uint8 for `*_u8`/`rgb24`/`bgr24`, float32 for
+  /// `*_fp32`) and ignored by `setup()`. Setting this field directly when constructing params in
+  /// code has no effect; change `output_pix_fmt` instead. There is no `output_dtype:` YAML key.
   DLDataType output_dtype{kDLUInt, 8U, 1U};
   /// Memory kind of the emitted Tensor. `kCudaDevice` stages the frame through a host buffer and
   /// copies it to device memory; `kHost` (or a pinned/managed variant) copies it directly.

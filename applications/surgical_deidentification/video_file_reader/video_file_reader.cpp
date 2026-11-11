@@ -352,6 +352,7 @@ void VideoFileReaderOp::start() {
   host_buffer_.assign(frame_bytes_, std::byte{0});
   frames_emitted_ = 0;
   eos_reached_ = false;
+  eos_drain_ticks_ = 0;
   have_next_emit_time_ = false;
   (void)config;
 }
@@ -382,11 +383,21 @@ expected<bool, Error> VideoFileReaderOp::decode_one_frame() {
     // EAGAIN: decoder needs another input packet before it can produce a frame.
     const int read_ret = av_read_frame(format_ctx_, packet_);
     if (read_ret < 0) {
-      // Clean (or otherwise unrecoverable) end of the demuxed stream: flush the decoder so any
-      // frames it was internally buffering (B-frames) are drained via the next
-      // avcodec_receive_frame() call at the top of this loop.
-      avcodec_send_packet(codec_ctx_, nullptr);
-      continue;
+      if (read_ret == AVERROR_EOF) {
+        // Clean end of the demuxed stream: flush the decoder so any frames it was internally
+        // buffering (B-frames) are drained via the next avcodec_receive_frame() at the top of
+        // this loop.
+        avcodec_send_packet(codec_ctx_, nullptr);
+        continue;
+      }
+      // A disk, network, or format-layer read error: do NOT silently treat it as EOF, since
+      // the caller cannot otherwise tell a truncated clip from a complete one. Report upward.
+      char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
+      av_strerror(read_ret, err_buf, sizeof(err_buf));
+      return make_unexpected(Error{
+          ErrorCode::kFailure,
+          "VideoFileReaderOp: av_read_frame failed for '" + config.path.string() + "': " +
+              err_buf});
     }
     if (packet_->stream_index != video_stream_index_) {
       av_packet_unref(packet_);
@@ -407,8 +418,11 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
 
   // Give downstream operators a window of idle ticks to drain their queues before closing the
   // run — request_stop closes the callback-admission gate immediately, so queued frames at the
-  // classifier would otherwise be dropped.
-  constexpr int32_t kEosDrainTicks = 32;
+  // classifier would otherwise be dropped. The window is sized for a worst-case per-frame
+  // inference latency of ~1 second at the 1 ms compute() period (see contract() above); apps
+  // that need stricter "every frame reaches the sink" guarantees should drive termination from
+  // the sink side instead (e.g. via session.request_stop() when the sink sees frame_count).
+  constexpr int32_t kEosDrainTicks = 1024;
   const bool reached_frame_cap = config.frame_count > 0 && frames_emitted_ >= config.frame_count;
   const bool reached_eos = eos_reached_ && !config.loop;
   if (reached_frame_cap || reached_eos) {

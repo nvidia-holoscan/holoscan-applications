@@ -244,7 +244,10 @@ void VideoFileWriterOp::start() {
     msg += ")";
     throw std::runtime_error(msg);
   }
-  codec_ctx_->framerate = av_d2q(static_cast<double>(config.fps), 1'000'000);
+  // 65535 is the MP4 muxer's maximum denominator for the stream time_base (uint16 on the wire
+  // via the MVHD/MDHD time_scale fields); av_d2q with 1'000'000 can produce denominators that
+  // the muxer rejects or truncates. 29.97 still resolves to 30000/1001, 23.976 to 24000/1001.
+  codec_ctx_->framerate = av_d2q(static_cast<double>(config.fps), 65535);
   codec_ctx_->time_base = av_inv_q(codec_ctx_->framerate);
   codec_ctx_->pix_fmt = encode_fmt;
   codec_ctx_->bit_rate = config.bitrate;

@@ -18,12 +18,17 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -33,6 +38,7 @@
 #include <holoscan/core/errors.hpp>
 #include <holoscan/core/execution_context.hpp>
 #include <holoscan/core/graph.hpp>
+#include <holoscan/core/managed_shutdown_signals.hpp>
 #include <holoscan/core/operator.hpp>
 #include <holoscan/core/operator_spec.hpp>
 #include <holoscan/core/run.hpp>
@@ -54,9 +60,13 @@ using holoscan::ops::VideoFileReaderOp;
 using holoscan::ops::VideoFileReaderOpParams;
 
 // -----------------------------------------------------------------------------------------------
-// RunObservation: records one wall-clock timestamp per printed classification, so main()
-// knows when the run is done.
+// RunObservation: records one wall-clock timestamp per printed classification, so main() knows
+// when the run is done. Timestamps are held in a bounded ring (`kMaxTickHistory`) so a long
+// `--ticks 0` (loop-forever) run does not grow the vector without limit; `count` is the full
+// unbounded tick count, used by `wait_for()`.
 // -----------------------------------------------------------------------------------------------
+
+constexpr std::size_t kMaxTickHistory = 10000U;
 
 struct RunObservation {
   static void record_tick() {
@@ -64,18 +74,27 @@ struct RunObservation {
     {
       const std::lock_guard lock(mutex);
       ++count;
+      if (tick_times.size() >= kMaxTickHistory) {
+        tick_times.pop_front();
+      }
       tick_times.push_back(now);
     }
     ready.notify_all();
   }
 
-  [[nodiscard]] static bool wait_for(std::size_t expected, std::chrono::seconds timeout) {
+  [[nodiscard]] static bool wait_for(std::size_t expected,
+                                     std::chrono::steady_clock::duration timeout) {
     std::unique_lock lock(mutex);
     return ready.wait_for(lock, timeout, [expected] { return count >= expected; });
   }
 
+  [[nodiscard]] static std::size_t current_count() {
+    const std::lock_guard lock(mutex);
+    return count;
+  }
+
   static void print_summary(std::size_t warmup) {
-    std::vector<std::chrono::steady_clock::time_point> ticks_copy;
+    std::deque<std::chrono::steady_clock::time_point> ticks_copy;
     {
       const std::lock_guard lock(mutex);
       ticks_copy = tick_times;
@@ -111,7 +130,7 @@ struct RunObservation {
   static inline std::mutex mutex;
   static inline std::condition_variable ready;
   static inline std::size_t count{};
-  static inline std::vector<std::chrono::steady_clock::time_point> tick_times{};
+  static inline std::deque<std::chrono::steady_clock::time_point> tick_times{};
 };
 
 class ClassificationPrinterOp final : public holoscan::Operator<> {
@@ -210,13 +229,34 @@ struct CliArgs {
   std::size_t ticks = 0U;
   bool self_test = false;
   std::size_t ci_ticks = 0U;
+  // Optional explicit timeout for `--ticks` runs. `0` means "derive from ticks + frame_rate".
+  std::size_t timeout_seconds = 0U;
 };
 
 [[nodiscard]] bool parse_args(int argc, char** argv, CliArgs& out) {
+  // Strict non-negative integer parse: reject empty input, leading sign/whitespace and trailing
+  // non-digits. std::stoul would silently accept "10abc" and wrap "-1" to a huge unsigned value.
   const auto parse_unsigned = [](const char* arg_name, const char* value,
                                  std::size_t& dst) -> bool {
+    if (value == nullptr || *value == '\0') {
+      std::cerr << arg_name << " requires a non-negative integer (got empty value)\n";
+      return false;
+    }
+    for (const char* p = value; *p != '\0'; ++p) {
+      if (*p < '0' || *p > '9') {
+        std::cerr << arg_name << " requires a non-negative integer with digits only (got '"
+                  << value << "')\n";
+        return false;
+      }
+    }
     try {
-      dst = static_cast<std::size_t>(std::stoul(value));
+      std::size_t pos = 0;
+      const unsigned long parsed = std::stoul(value, &pos);
+      if (pos != std::strlen(value)) {
+        std::cerr << arg_name << " requires a non-negative integer (got '" << value << "')\n";
+        return false;
+      }
+      dst = static_cast<std::size_t>(parsed);
       return true;
     } catch (const std::exception&) {
       std::cerr << arg_name << " requires a non-negative integer (got '" << value << "')\n";
@@ -237,6 +277,10 @@ struct CliArgs {
       if (!parse_unsigned("--ci-ticks", argv[++i], out.ci_ticks)) {
         return false;
       }
+    } else if (arg == "--timeout" && i + 1 < argc) {
+      if (!parse_unsigned("--timeout", argv[++i], out.timeout_seconds)) {
+        return false;
+      }
     } else {
       std::cerr << "unrecognized argument: " << arg << '\n';
       return false;
@@ -245,13 +289,41 @@ struct CliArgs {
   return out.self_test || out.ci_ticks > 0U || !out.config_path.empty();
 }
 
+// Create a fresh, private temp directory for one run. Collides-free across concurrent
+// `--ci-ticks` invocations even when they share `/tmp`.
+[[nodiscard]] std::filesystem::path make_unique_tmp_dir(std::string_view tag) {
+  namespace fs = std::filesystem;
+  std::string tmpl = (fs::temp_directory_path() / (std::string{tag} + "_XXXXXX")).string();
+  // mkdtemp mutates its input in place.
+  std::vector<char> buf(tmpl.begin(), tmpl.end());
+  buf.push_back('\0');
+  const char* created = ::mkdtemp(buf.data());
+  if (created == nullptr) {
+    throw std::system_error(errno, std::generic_category(), "mkdtemp failed");
+  }
+  return fs::path{created};
+}
+
 [[nodiscard]] int run_ci_pipeline(std::size_t ticks) {
-  const auto tmp_mp4 = std::filesystem::temp_directory_path() / "de_id_ci_synthetic.mp4";
+  namespace fs = std::filesystem;
+  fs::path tmp_dir;
+  try {
+    tmp_dir = make_unique_tmp_dir("de_id_ci");
+  } catch (const std::exception& exception) {
+    std::cerr << "de_id --ci-ticks: failed to create temp dir: " << exception.what() << '\n';
+    return 1;
+  }
+  const fs::path tmp_mp4 = tmp_dir / "synthetic.mp4";
+  const auto cleanup = [&tmp_dir]() noexcept {
+    std::error_code ec;
+    fs::remove_all(tmp_dir, ec);
+  };
   try {
     surgical_deid::test::encode_synthetic_mp4(tmp_mp4.string(), /*width=*/128, /*height=*/128,
                                               /*frame_count=*/static_cast<int>(ticks) + 10, 25);
   } catch (const std::exception& exception) {
     std::cerr << "de_id --ci-ticks: failed to encode synthetic MP4: " << exception.what() << '\n';
+    cleanup();
     return 1;
   }
 
@@ -285,17 +357,17 @@ struct CliArgs {
     const holoscan::ExecutionPlan plan = holoscan::compile(graph, std::move(options));
     if (!plan.ok()) {
       std::cerr << plan.json() << '\n';
-      std::filesystem::remove(tmp_mp4);
+      cleanup();
       return 1;
     }
     holoscan::RunSession session = holoscan::run_async(plan);
     session.wait();
   } catch (const std::exception& exception) {
     std::cerr << "de_id --ci-ticks: pipeline error: " << exception.what() << '\n';
-    std::filesystem::remove(tmp_mp4);
+    cleanup();
     return 1;
   }
-  std::filesystem::remove(tmp_mp4);
+  cleanup();
   const std::size_t delivered = CiDropSink::received.load(std::memory_order_relaxed);
   if (delivered < ticks) {
     std::cerr << "de_id --ci-ticks: sink received " << delivered << " of " << ticks
@@ -311,7 +383,8 @@ struct CliArgs {
 int main(int argc, char** argv) {
   CliArgs args;
   if (!parse_args(argc, argv, args)) {
-    std::cerr << "usage: de_id --config <path.yaml> [--ticks N] | --self-test | --ci-ticks N\n";
+    std::cerr << "usage: de_id --config <path.yaml> [--ticks N] [--timeout S] | --self-test "
+                 "| --ci-ticks N\n";
     return 1;
   }
 
@@ -322,6 +395,15 @@ int main(int argc, char** argv) {
 
   if (args.ci_ticks > 0U) {
     return run_ci_pipeline(args.ci_ticks);
+  }
+
+  // Own SIGINT/SIGTERM before TRT/CUDA spin up participant threads, so Ctrl-C reaches
+  // RunSession::wait() and lets the inference-timing summary print instead of killing the process.
+  auto signals = holoscan::ManagedShutdownSignals::create();
+  if (!signals) {
+    std::cerr << "de_id: ManagedShutdownSignals::create failed: " << signals.error().message
+              << '\n';
+    return 1;
   }
 
   YAML::Node config_root;
@@ -406,13 +488,40 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    holoscan::RunSession session = holoscan::run_async(plan);
+    holoscan::RunSession session = holoscan::run_async(plan, *signals);
     bool complete = true;
     if (args.ticks == 0U) {
       session.wait();
     } else {
-      complete = RunObservation::wait_for(args.ticks, std::chrono::seconds{60});
-      session.request_stop();
+      // Derive the deadline from (ticks / frame_rate) when frame_rate > 0, so slow playback at
+      // high tick counts does not time out before the pipeline could possibly finish. A caller
+      // can override with --timeout. Minimum floor of 60 s keeps the original behavior at very
+      // small tick counts.
+      std::chrono::seconds timeout{60};
+      if (args.timeout_seconds > 0U) {
+        timeout = std::chrono::seconds{args.timeout_seconds};
+      } else if (reader_params.frame_rate > 0.0F) {
+        const double need_s =
+            (static_cast<double>(args.ticks) / static_cast<double>(reader_params.frame_rate)) * 1.5;
+        timeout = std::max(std::chrono::seconds{60},
+                           std::chrono::seconds{static_cast<long>(std::ceil(need_s))});
+      }
+      // Poll both: either the printer saw `ticks` classifications, or the session finished on its
+      // own (video ended before `ticks`, operator failed, SIGINT reached ManagedShutdownSignals).
+      const auto poll_step = std::chrono::milliseconds{50};
+      const auto deadline = std::chrono::steady_clock::now() + timeout;
+      while (std::chrono::steady_clock::now() < deadline) {
+        if (RunObservation::wait_for(args.ticks, poll_step)) {
+          break;
+        }
+        if (!session.is_running()) {
+          break;
+        }
+      }
+      complete = (RunObservation::current_count() >= args.ticks) || !session.is_running();
+      if (session.is_running()) {
+        session.request_stop();
+      }
       session.wait();
     }
 
@@ -421,13 +530,30 @@ int main(int argc, char** argv) {
     // percentiles.
     RunObservation::print_summary(/*warmup=*/10U);
 
+    // Fail loudly if an operator reported a diagnostic or the session ended in an error state,
+    // even when the printer reached `args.ticks`. Mirrors the pattern in other C++ apps.
+    bool had_error = false;
+    for (const auto& diag : session.diagnostics()) {
+      std::cerr << "  diagnostic: id=" << diag.id.value << " token=" << diag.token
+                << " vertex=" << diag.source.vertex.value << " port=" << diag.source.port.value()
+                << " required=" << diag.required << " provided=" << diag.provided << '\n';
+      had_error = true;
+    }
+    const auto termination = session.termination();
+    const bool terminated_ok =
+        termination == holoscan::RunTermination::kRequestedCompleted ||
+        termination == holoscan::RunTermination::kCompleted ||
+        termination == holoscan::RunTermination::kStopped;
+    if (!terminated_ok) {
+      std::cerr << "de_id: run terminated with status=" << static_cast<int>(termination) << '\n';
+      had_error = true;
+    }
+    if (had_error) {
+      return 1;
+    }
+
     if (!complete) {
       std::cerr << "run did not complete " << args.ticks << " ticks within the timeout\n";
-      for (const auto& diag : session.diagnostics()) {
-        std::cerr << "  diagnostic: id=" << diag.id.value << " token=" << diag.token
-                  << " vertex=" << diag.source.vertex.value << " port=" << diag.source.port.value()
-                  << " required=" << diag.required << " provided=" << diag.provided << '\n';
-      }
       return 2;
     }
 

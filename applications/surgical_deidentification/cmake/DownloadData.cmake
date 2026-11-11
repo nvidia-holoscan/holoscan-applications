@@ -4,10 +4,12 @@
 set(SURGICAL_DEID_NGC_VERSION "20230127"
     CACHE STRING "NGC endoscopy_out_of_body_detection version")
 
-# SHA-256 of the NGC archive for version 20230127. Update together with
-# SURGICAL_DEID_NGC_VERSION / SURGICAL_DEID_NGC_URL. Leave empty to skip verification
-# (not recommended for distributed builds).
-set(SURGICAL_DEID_NGC_SHA256 ""
+# SHA-256 of the NGC archive for version 20230127, captured from a verified download of the
+# default URL. If SURGICAL_DEID_NGC_URL or SURGICAL_DEID_NGC_VERSION is overridden, override
+# this to the matching hash (or set it to "" to opt out of verification, documented as a risk
+# in SECURITY.md).
+set(SURGICAL_DEID_NGC_SHA256
+    "55f59e12f6cb9738d21e0cc1dea85d112d4278a02deeb234afbae9544af3afa3"
     CACHE STRING "Expected SHA-256 of the NGC archive (empty disables verification)")
 
 set(_sd_default_url
@@ -21,7 +23,12 @@ set(_SD_NGC_URL_PREV_DEFAULT "${_sd_default_url}" CACHE INTERNAL "")
 
 set(_sd_data_subdir "endoscopy_out_of_body_detection")
 set(_sd_data_root   "${HOLOHUB_DATA_DIR}/${_sd_data_subdir}")
-set(_sd_archive     "${CMAKE_CURRENT_BINARY_DIR}/${_sd_data_subdir}-${SURGICAL_DEID_NGC_VERSION}.zip")
+# Key the cached archive filename by both version AND a short URL fingerprint, so switching
+# SURGICAL_DEID_NGC_URL (e.g. to an internal mirror) cannot silently extract a stale archive
+# that was fetched from a different URL at the same version.
+string(SHA256 _sd_url_hash "${SURGICAL_DEID_NGC_URL}")
+string(SUBSTRING "${_sd_url_hash}" 0 12 _sd_url_tag)
+set(_sd_archive     "${CMAKE_CURRENT_BINARY_DIR}/${_sd_data_subdir}-${SURGICAL_DEID_NGC_VERSION}-${_sd_url_tag}.zip")
 set(_sd_mp4         "${_sd_data_root}/sample_clip_out_of_body_detection.mp4")
 set(_sd_onnx        "${_sd_data_root}/out_of_body_detection.onnx")
 set(_sd_stamp       "${_sd_data_root}/.ngc_version")

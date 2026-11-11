@@ -241,10 +241,10 @@ Running `ctest` against a full build (`HOLOHUB_BUILD_CPP=ON -DBUILD_TESTING=ON
 pass over the NGC `endoscopy_out_of_body_detection` model and clip. Without the dataset, the
 e2e test returns CTest's skip code (`77`) and the remaining 30 still run.
 
-Hosted CI (`HOLOHUB_BUILD_CPP=OFF -DBUILD_TESTING=ON`) skips the `de_id` binary and runs the 23
-CPU / runtime operator tests directly from the top-level `CMakeLists.txt`. If the Holoscan SDK
-is not installed on the runner, the block is skipped entirely with a `message(STATUS …)` note
-and configure still succeeds.
+Hosted CI (`HOLOHUB_BUILD_CPP=OFF -DBUILD_TESTING=ON`) skips the `de_id` binary (both the smoke
+and the e2e test) and runs the 29 CPU / runtime operator tests (24 YAML + 5 runtime) directly
+from the top-level `CMakeLists.txt`. If the Holoscan SDK is not installed on the runner, the
+block is skipped entirely with a `message(STATUS …)` note and configure still succeeds.
 
 The `ci` run mode registered in `metadata.json` invokes `de_id --ci-ticks 5`: it encodes a
 short synthetic MP4 in-process and drives `VideoFileReaderOp` through a drop-sink pipeline for
