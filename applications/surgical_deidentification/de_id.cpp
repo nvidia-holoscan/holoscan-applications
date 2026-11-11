@@ -518,7 +518,10 @@ int main(int argc, char** argv) {
           break;
         }
       }
-      complete = (RunObservation::current_count() >= args.ticks) || !session.is_running();
+      // Early session shutdown (video ended before --ticks) breaks out of the poll loop above,
+      // but does NOT mark the benchmark complete: a `--ticks N` run that only got N-k frames
+      // is not what the caller asked for, so it must still exit non-zero.
+      complete = (RunObservation::current_count() >= args.ticks);
       if (session.is_running()) {
         session.request_stop();
       }
