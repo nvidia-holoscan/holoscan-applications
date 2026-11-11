@@ -394,10 +394,9 @@ expected<bool, Error> VideoFileReaderOp::decode_one_frame() {
       // the caller cannot otherwise tell a truncated clip from a complete one. Report upward.
       char err_buf[AV_ERROR_MAX_STRING_SIZE] = {0};
       av_strerror(read_ret, err_buf, sizeof(err_buf));
-      return make_unexpected(Error{
-          ErrorCode::kFailure,
-          "VideoFileReaderOp: av_read_frame failed for '" + config.path.string() + "': " +
-              err_buf});
+      return make_unexpected(
+          Error{ErrorCode::kFailure, "VideoFileReaderOp: av_read_frame failed for '" +
+                                         config.path.string() + "': " + err_buf});
     }
     if (packet_->stream_index != video_stream_index_) {
       av_packet_unref(packet_);

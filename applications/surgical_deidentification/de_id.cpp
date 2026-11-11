@@ -244,8 +244,8 @@ struct CliArgs {
     }
     for (const char* p = value; *p != '\0'; ++p) {
       if (*p < '0' || *p > '9') {
-        std::cerr << arg_name << " requires a non-negative integer with digits only (got '"
-                  << value << "')\n";
+        std::cerr << arg_name << " requires a non-negative integer with digits only (got '" << value
+                  << "')\n";
         return false;
       }
     }
@@ -540,10 +540,9 @@ int main(int argc, char** argv) {
       had_error = true;
     }
     const auto termination = session.termination();
-    const bool terminated_ok =
-        termination == holoscan::RunTermination::kRequestedCompleted ||
-        termination == holoscan::RunTermination::kCompleted ||
-        termination == holoscan::RunTermination::kStopped;
+    const bool terminated_ok = termination == holoscan::RunTermination::kRequestedCompleted ||
+                               termination == holoscan::RunTermination::kCompleted ||
+                               termination == holoscan::RunTermination::kStopped;
     if (!terminated_ok) {
       std::cerr << "de_id: run terminated with status=" << static_cast<int>(termination) << '\n';
       had_error = true;
