@@ -159,6 +159,153 @@ class ApplicationTest(unittest.TestCase):
         result = self.run_app("--synthetic", "true", "--inference", "false", "--count", "0")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
 
+    def test_cae_rejects_unknown_mode(self):
+        result = self.run_app("--cae", "fast")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("--cae", result.stderr)
+
+    def test_cae_encode_rejected_until_multimedia_is_available(self):
+        result = self.run_app(
+            "--synthetic", "true", "--inference", "false", "--count", "1", "--cae", "encode"
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("holoscan-multimedia", result.stderr)
+
+    def test_cae_encode_rejected_before_data_checks(self):
+        result = self.run_app("--data", "/nonexistent", "--cae", "encode")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("holoscan-multimedia", result.stderr)
+
+    def test_cae_paths_must_not_be_empty(self):
+        for option in ("--cae-policy-config", "--cae-policy-dump"):
+            with self.subTest(option=option):
+                result = self.run_app("--cae", "policy", option, "")
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(f"{option} requires a path", result.stderr)
+
+    def test_cae_policy_requires_inference(self):
+        result = self.run_app(
+            "--synthetic", "true", "--inference", "false", "--count", "1", "--cae", "policy"
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("--inference", result.stderr)
+
+    def test_cae_options_require_policy_mode(self):
+        for option in ("--cae-policy-config", "--cae-policy-dump"):
+            with self.subTest(option=option):
+                result = self.run_app(
+                    "--synthetic", "true", "--inference", "false", "--count", "1", option, "x"
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("--cae policy", result.stderr)
+
+    def test_cae_policy_config_errors_fail_before_running(self):
+        configs = {
+            "missing.json": None,
+            "unknown_class.json": '{"schema_version": 1, "classes": {"forceps": "protect"}}',
+            "bad_policy.json": '{"schema_version": 1, "classes": {"hook": "boost"}}',
+            "duplicate.json": '{"schema_version": 1, "classes": {"0": "protect", "grasper": 1}}',
+            "threshold.json": '{"schema_version": 1, "class_threshold": 2}',
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "tool_loc_convlstm.onnx").write_bytes(b"model placeholder")
+            for name, text in configs.items():
+                with self.subTest(config=name):
+                    if text is not None:
+                        (root / name).write_text(text)
+                    result = self.run_app(
+                        "--data",
+                        root,
+                        "--synthetic",
+                        "true",
+                        "--count",
+                        "1",
+                        "--display",
+                        "false",
+                        "--cae",
+                        "policy",
+                        "--cae-policy-config",
+                        root / name,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertIn("policy config", result.stderr.lower())
+
+    def test_cae_policy_dump_must_be_new(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "tool_loc_convlstm.onnx").write_bytes(b"model placeholder")
+            result = self.run_app(
+                "--data",
+                root,
+                "--synthetic",
+                "true",
+                "--count",
+                "1",
+                "--display",
+                "false",
+                "--cae",
+                "policy",
+                "--cae-policy-dump",
+                root,
+            )
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("already exists", result.stderr)
+
+    def test_cae_policy_dump_must_be_creatable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "tool_loc_convlstm.onnx").write_bytes(b"model placeholder")
+            (root / "a_file").write_text("not a directory")
+            dump = root / "a_file" / "dump"
+            result = self.run_app(
+                "--data",
+                root,
+                "--synthetic",
+                "true",
+                "--count",
+                "1",
+                "--display",
+                "false",
+                "--cae",
+                "policy",
+                "--cae-policy-dump",
+                dump,
+            )
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("is not a writable directory", result.stderr)
+            self.assertFalse(dump.exists())
+
+    def test_cae_policy_dump_path_is_reported_absolute_and_normalized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp).resolve()
+            (root / "tool_loc_convlstm.onnx").write_bytes(b"model placeholder")
+            (root / "existing").mkdir()
+            result = subprocess.run(
+                [
+                    os.environ["ENDOSCOPY_EXECUTABLE"],
+                    "--data",
+                    str(root),
+                    "--synthetic",
+                    "true",
+                    "--count",
+                    "1",
+                    "--display",
+                    "false",
+                    "--cae",
+                    "policy",
+                    "--cae-policy-dump",
+                    "sub/./../existing/",
+                ],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(f"already exists: {root / 'existing'}\n", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

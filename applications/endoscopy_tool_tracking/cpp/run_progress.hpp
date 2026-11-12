@@ -9,16 +9,19 @@
 
 namespace endoscopy_tool_tracking {
 
-// Shared by terminal consumers. Completion is requested only after both lossless
-// branches have consumed every frame; stopping at source EOF would discard queued work.
+// Shared by terminal consumers. Completion is requested only after every active lossless
+// branch has consumed every frame; stopping at source EOF would discard queued work.
 struct RunProgress {
   std::uint32_t expected{};
   bool inference{};
+  bool cae_policy{};
   std::atomic<std::uint32_t> consumed{};
   std::atomic<std::uint32_t> tracked{};
+  std::atomic<std::uint32_t> policies{};
 
   void finish_if_ready(holoscan::ExecutionContext& context) const {
-    if (consumed.load() == expected && (!inference || tracked.load() == expected)) {
+    if (consumed.load() == expected && (!inference || tracked.load() == expected) &&
+        (!cae_policy || policies.load() == expected)) {
       context.request_completion();
     }
   }
