@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 DATASET_URL = "https://huggingface.co/datasets/KernelCo/holohub_bci_visualization/resolve"
+DATASET_ID = "KernelCo/holohub_bci_visualization"
 REVISION = "fe75bc160f929e680d1e6ef04cd42139782cb8ec"
 HEADSETS = (
     "devkit_3",
@@ -137,14 +138,14 @@ def matches(path: Path, expected: dict[str, object]) -> bool:
     )
 
 
-def download(
+def download_from_url(
     url: str,
     destination: Path,
     expected: dict[str, object],
     network_timeout: float = 60,
     deadline: float = 7200,
 ) -> None:
-    """Download url to destination through a verified temporary file in the same directory."""
+    """Download a test fixture URL through a verified temporary file."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as staging:
         staged = Path(staging.name)
@@ -163,6 +164,41 @@ def download(
     staged.replace(destination)
 
 
+def download_from_hub(
+    remote: str,
+    destination: Path,
+    expected: dict[str, object],
+    network_timeout: float = 60,
+    deadline: float = 7200,
+) -> None:
+    """Download a pinned Hub file, verify it, then atomically publish it."""
+    try:
+        from huggingface_hub import hf_hub_download
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".bci-download-", dir=destination.parent
+        ) as workdir:
+            with download_deadline(deadline):
+                staged = Path(
+                    hf_hub_download(
+                        repo_id=DATASET_ID,
+                        filename=remote,
+                        repo_type="dataset",
+                        revision=REVISION,
+                        local_dir=workdir,
+                        etag_timeout=network_timeout,
+                    )
+                )
+            if not matches(staged, expected):
+                raise PreparationError(f"checksum mismatch for {remote}")
+            staged.replace(destination)
+    except PreparationError:
+        raise
+    except Exception as error:
+        raise PreparationError(f"failed to download {remote}: {error}") from error
+
+
 def prepare_data(options: argparse.Namespace) -> None:
     """Download every file that is missing or doesn't match its checksum, or all with --force."""
     base = f"{options.base_url.rstrip('/')}/{REVISION}"
@@ -175,13 +211,18 @@ def prepare_data(options: argparse.Namespace) -> None:
             if matches(destination, expected):
                 continue
         print(f"Downloading {remote}", flush=True)
-        download(
-            f"{base}/{remote}",
-            destination,
-            expected,
-            options.network_timeout,
-            options.download_deadline,
-        )
+        if options.base_url == DATASET_URL:
+            download_from_hub(
+                remote, destination, expected, options.network_timeout, options.download_deadline
+            )
+        else:
+            download_from_url(
+                f"{base}/{remote}",
+                destination,
+                expected,
+                options.network_timeout,
+                options.download_deadline,
+            )
     print(f"Prepared {options.output} for headset {options.headset}")
 
 
