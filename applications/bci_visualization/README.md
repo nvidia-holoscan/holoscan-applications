@@ -101,14 +101,16 @@ the SNIRF recording (about 500 MB), the anatomy mask, and the reconstruction ass
 the `flow_2` headset, whose channel map covers every channel in this recording. Its
 Jacobian is 14.25 GB and is loaded into GPU memory, so the GPU needs more than 14.25 GB free.
 
-The prepared dataset occupies about 14.8 GB on disk. Allow roughly 17–20 minutes for
-the initial download, based on an observed transfer; actual time depends on network
+The prepared dataset occupies about 14.8 GB on disk; download time depends on network
 throughput. Replacing an existing dataset with `--force` can temporarily require about
 29 GB because each new file is downloaded before replacing the old copy.
 
-Downloads use a 60-second network operation timeout and a two-hour deadline per file,
-including opening the connection and streaming the response. For slower networks, prepare
-manually with larger limits (in seconds):
+Downloads use the pinned Hugging Face Hub client with `hf_xet`. Don't rely on an
+interrupted download resuming its partial file.
+
+Hub metadata requests use a 60-second network timeout, and each file has a two-hour
+deadline that includes the Xet transfer. For slower networks, prepare manually with
+larger limits (in seconds):
 
 ```bash
 python3 applications/bci_visualization/prepare_data.py --output data/bci_visualization \
