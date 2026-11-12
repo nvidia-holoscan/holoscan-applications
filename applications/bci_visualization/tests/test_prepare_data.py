@@ -205,7 +205,7 @@ class PrepareDataTest(unittest.TestCase):
         self.assertEqual(destination.read_bytes(), b"previous verified file")
         self.assertEqual(list(self.output.glob(".bci-download-*")), [])
 
-    def test_hub_download_applies_timeouts_and_preserves_destination(self) -> None:
+    def test_deadline_wrapper_interrupts_a_stalled_hub_call(self) -> None:
         destination = self.output / "flow_channel_map.json"
         destination.parent.mkdir(parents=True)
         destination.write_bytes(b"previous verified file")
