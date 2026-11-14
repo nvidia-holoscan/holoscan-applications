@@ -185,9 +185,14 @@ class VideoFileReaderOp : public holoscan::Operator<VideoFileReaderOpParams> {
   AVPacket* packet_{};
   SwsContext* sws_ctx_{};
   int video_stream_index_{-1};
+  // Cached source parameters sws_ctx_ was built for. compute() rebuilds the context whenever
+  // decoded_frame_'s width/height/format diverge from these (RTSP/HTTP mid-stream changes).
+  int sws_src_width_{};
+  int sws_src_height_{};
+  int sws_src_fmt_{-1};  // AVPixelFormat sentinel; -1 == AV_PIX_FMT_NONE
+  int sws_dst_fmt_{-1};  // AVPixelFormat sentinel
 
-  std::vector<std::uint8_t> scaled_buffer_;  ///< Backing store for scaled_frame_'s HWC uint8 data.
-  std::vector<std::byte> host_buffer_;       ///< Final (possibly transposed/normalized) frame.
+  std::vector<std::byte> host_buffer_;  ///< Final (possibly transposed/normalized) frame.
 
   int32_t frames_emitted_{};
   bool eos_reached_{};
@@ -199,6 +204,10 @@ class VideoFileReaderOp : public holoscan::Operator<VideoFileReaderOpParams> {
   /// Shared by start() and by the loop-triggered re-open after end-of-stream.
   /// @throws std::runtime_error on any libav* failure.
   void open_stream();
+  /// @brief Rebuild sws_ctx_ if decoded_frame_'s source parameters have changed since the
+  /// context was last built (live-source resolution / pixel-format switches).
+  /// @throws std::runtime_error if the new sws_getContext fails.
+  void reconfigure_sws_if_changed();
   /// @brief Release format_ctx_/codec_ctx_/sws_ctx_/decoded_frame_/scaled_frame_/packet_.
   void close_stream();
   /// @brief Read and decode exactly one frame into decoded_frame_.
