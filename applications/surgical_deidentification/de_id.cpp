@@ -176,9 +176,9 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
     // as an operator error lets session.diagnostics() fail the run instead.
     if (!std::isfinite(logits[0]) || !std::isfinite(logits[1])) {
       return holoscan::make_unexpected(holoscan::Error{
-          holoscan::ErrorCode::kFailure,
-          "ClassificationPrinterOp: non-finite logits (" + std::to_string(logits[0]) + ", " +
-              std::to_string(logits[1]) + ")"});
+          holoscan::ErrorCode::kFailure, "ClassificationPrinterOp: non-finite logits (" +
+                                             std::to_string(logits[0]) + ", " +
+                                             std::to_string(logits[1]) + ")"});
     }
 
     const float max_logit = std::max(logits[0], logits[1]);
