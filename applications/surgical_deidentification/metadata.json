@@ -1,0 +1,55 @@
+{
+  "application": {
+    "name": "Surgical De-identification (In-Body / Out-of-Body Classifier)",
+    "description": "Binary in-body / out-of-body surgical-video classifier used as a de-identification pre-filter. Pipeline: VideoFileReaderOp (FFmpeg decode) -> TensorPreprocessorOp (NPP resize + normalize) -> InferenceOp (TensorRT de_id.onnx) -> ClassificationPrinterOp (stdout).",
+    "authors": [
+      { "name": "Holoscan Team", "affiliation": "NVIDIA" }
+    ],
+    "language": "C++",
+    "version": "1.0.0",
+    "changelog": {
+      "1.0.0": "Port from Holohub surgical_deidentification app to holoscan-applications."
+    },
+    "holoscan_sdk": {
+      "minimum_required_version": "5.0.0",
+      "tested_versions": ["5.0.0"]
+    },
+    "platforms": ["x86_64", "aarch64"],
+    "tags": ["Inference", "Classifier", "Surgical", "De-ID", "Video"],
+    "ranking": 2,
+    "requirements": {
+      "apt": [
+        "libavformat-dev",
+        "libavcodec-dev",
+        "libavutil-dev",
+        "libswscale-dev",
+        "libyaml-cpp-dev"
+      ],
+      "data": [
+        {
+          "name": "Endoscopy out-of-body detection sample",
+          "description": "ONNX model and sample MP4 used by the stock config.yaml.",
+          "url": "https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara-holoscan/resources/endoscopy_out_of_body_detection",
+          "version": "20230127"
+        }
+      ]
+    },
+    "default_mode": "classify",
+    "modes": {
+      "classify": {
+        "description": "Run the full classifier pipeline against the NGC endoscopy_out_of_body_detection dataset. The stock config.yaml resolves model and video paths under /data/endoscopy_out_of_body_detection/; the user must explicitly mount the dataset directory at /data (for example: holoscan run surgical_deidentification --docker-opts=\"-v <repository>/data:/data\"). The dataset is fetched by the CMake download target during build when SURGICAL_DEID_DOWNLOAD_DATA=ON.",
+        "run": {
+          "command": "\"<holohub_app_bin>/de_id\" --config \"<holohub_app_bin>/config.yaml\"",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "ci": {
+        "description": "Finite, headless, non-interactive bounded run with no external dataset. Encodes a short synthetic MP4 in-process and drives VideoFileReaderOp through a drop-sink pipeline for a fixed number of ticks — exercises the Holoscan runtime, FFmpeg decode path, and operator lifecycle without the NGC data mount or GPU inference.",
+        "run": {
+          "command": "\"<holohub_app_bin>/de_id\" --ci-ticks 5",
+          "workdir": "holohub_app_bin"
+        }
+      }
+    }
+  }
+}

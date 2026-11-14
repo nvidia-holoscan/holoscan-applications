@@ -18,7 +18,10 @@
 
 #pragma once
 
+#include <arpa/inet.h>   // NOLINT(build/include_order)
+#include <netinet/in.h>  // NOLINT(build/include_order)
 #include <poll.h>
+#include <sys/socket.h>  // NOLINT(build/include_order)
 #include <unistd.h>
 
 #include <algorithm>
@@ -36,7 +39,6 @@
 #include <utility>
 #include <vector>
 
-#include <arpa/inet.h>  // NOLINT(build/include_order)
 #include <holoscan/core/errors.hpp>
 #include <holoscan/core/execution_context.hpp>
 #include <holoscan/core/lifecycle.hpp>
@@ -46,8 +48,6 @@
 #include <holoscan/core/readiness_source.hpp>
 #include <holoscan/core/temporal_contract.hpp>
 #include <holoscan/logger/logger.hpp>
-#include <netinet/in.h>  // NOLINT(build/include_order)
-#include <sys/socket.h>  // NOLINT(build/include_order)
 
 #include "packet_batch.hpp"
 

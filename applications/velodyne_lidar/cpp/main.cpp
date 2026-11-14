@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+#include <arpa/inet.h>  // NOLINT(build/include_order)
+
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -33,7 +35,6 @@
 #include <utility>
 #include <vector>
 
-#include <arpa/inet.h>  // NOLINT(build/include_order)
 #include <holoscan/core/compile.hpp>
 #include <holoscan/core/connection_options.hpp>
 #include <holoscan/core/graph.hpp>
