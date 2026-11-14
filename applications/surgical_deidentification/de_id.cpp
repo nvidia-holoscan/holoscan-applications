@@ -171,6 +171,16 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
       return holoscan::make_unexpected(std::move(copied).error());
     }
 
+    // Reject non-finite logits (NaN/±Inf) before softmax. The softmax would otherwise produce
+    // NaN confidences and report an invalid prediction as a valid classification; surfacing it
+    // as an operator error lets session.diagnostics() fail the run instead.
+    if (!std::isfinite(logits[0]) || !std::isfinite(logits[1])) {
+      return holoscan::make_unexpected(holoscan::Error{
+          holoscan::ErrorCode::kFailure,
+          "ClassificationPrinterOp: non-finite logits (" + std::to_string(logits[0]) + ", " +
+              std::to_string(logits[1]) + ")"});
+    }
+
     const float max_logit = std::max(logits[0], logits[1]);
     const float exp0 = std::exp(logits[0] - max_logit);
     const float exp1 = std::exp(logits[1] - max_logit);
