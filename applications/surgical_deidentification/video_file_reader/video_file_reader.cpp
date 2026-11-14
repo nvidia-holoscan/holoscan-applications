@@ -317,10 +317,10 @@ void VideoFileReaderOp::open_stream() {
   sws_src_height_ = codec_ctx_->height;
   sws_src_fmt_ = static_cast<int>(codec_ctx_->pix_fmt);
   sws_dst_fmt_ = static_cast<int>(info.sws_dst_fmt);
-  sws_ctx_ = sws_getContext(sws_src_width_, sws_src_height_,
-                            static_cast<AVPixelFormat>(sws_src_fmt_), resolved_width_,
-                            resolved_height_, static_cast<AVPixelFormat>(sws_dst_fmt_),
-                            SWS_BILINEAR, nullptr, nullptr, nullptr);
+  sws_ctx_ =
+      sws_getContext(sws_src_width_, sws_src_height_, static_cast<AVPixelFormat>(sws_src_fmt_),
+                     resolved_width_, resolved_height_, static_cast<AVPixelFormat>(sws_dst_fmt_),
+                     SWS_BILINEAR, nullptr, nullptr, nullptr);
   if (sws_ctx_ == nullptr) {
     throw std::runtime_error("VideoFileReaderOp: sws_getContext failed for '" + url + "'");
   }
@@ -340,13 +340,14 @@ void VideoFileReaderOp::reconfigure_sws_if_changed() {
   sws_src_width_ = decoded_frame_->width;
   sws_src_height_ = decoded_frame_->height;
   sws_src_fmt_ = decoded_frame_->format;
-  sws_ctx_ = sws_getContext(sws_src_width_, sws_src_height_,
-                            static_cast<AVPixelFormat>(sws_src_fmt_), resolved_width_,
-                            resolved_height_, static_cast<AVPixelFormat>(sws_dst_fmt_),
-                            SWS_BILINEAR, nullptr, nullptr, nullptr);
+  sws_ctx_ =
+      sws_getContext(sws_src_width_, sws_src_height_, static_cast<AVPixelFormat>(sws_src_fmt_),
+                     resolved_width_, resolved_height_, static_cast<AVPixelFormat>(sws_dst_fmt_),
+                     SWS_BILINEAR, nullptr, nullptr, nullptr);
   if (sws_ctx_ == nullptr) {
-    throw std::runtime_error("VideoFileReaderOp: sws_getContext failed on mid-stream "
-                             "parameter change");
+    throw std::runtime_error(
+        "VideoFileReaderOp: sws_getContext failed on mid-stream "
+        "parameter change");
   }
   // scaled_frame_ dst parameters are fixed (always resolved_width_ x resolved_height_), so its
   // backing storage does not need to be reallocated.
