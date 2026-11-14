@@ -296,28 +296,60 @@ void VideoFileReaderOp::open_stream() {
     throw std::runtime_error("VideoFileReaderOp: libav frame/packet allocation failed");
   }
 
+  // Allocate scaled_frame_'s storage via av_frame_get_buffer with a 32-byte row alignment so
+  // libswscale's SIMD paths have the padding they assume. The prior `align=1`
+  // av_image_fill_arrays allocation sized the buffer at exactly the packed image size, and
+  // libswscale's optimized YUV->RGB kernels can write a few bytes past that boundary for some
+  // even widths (observed up to 24 bytes past end for 1912x16 YUV420P->RGB24 with libswscale
+  // 8.3.100), corrupting adjacent heap state. Aligned storage eliminates the overrun.
   const PixFmtInfo info = pix_fmt_info(config.output_pix_fmt);
-  sws_ctx_ =
-      sws_getContext(codec_ctx_->width, codec_ctx_->height, codec_ctx_->pix_fmt, resolved_width_,
-                     resolved_height_, info.sws_dst_fmt, SWS_BILINEAR, nullptr, nullptr, nullptr);
+  scaled_frame_->format = info.sws_dst_fmt;
+  scaled_frame_->width = resolved_width_;
+  scaled_frame_->height = resolved_height_;
+  if (av_frame_get_buffer(scaled_frame_, /*align=*/32) < 0) {
+    throw std::runtime_error("VideoFileReaderOp: av_frame_get_buffer failed for '" + url + "'");
+  }
+
+  // Build the sws context against the opened codec's declared source parameters. These may
+  // change mid-stream for live sources (RTSP/HTTP); compute() rebuilds the context whenever
+  // decoded_frame_'s width/height/format diverges from `sws_src_*_` below.
+  sws_src_width_ = codec_ctx_->width;
+  sws_src_height_ = codec_ctx_->height;
+  sws_src_fmt_ = static_cast<int>(codec_ctx_->pix_fmt);
+  sws_dst_fmt_ = static_cast<int>(info.sws_dst_fmt);
+  sws_ctx_ = sws_getContext(sws_src_width_, sws_src_height_,
+                            static_cast<AVPixelFormat>(sws_src_fmt_), resolved_width_,
+                            resolved_height_, static_cast<AVPixelFormat>(sws_dst_fmt_),
+                            SWS_BILINEAR, nullptr, nullptr, nullptr);
   if (sws_ctx_ == nullptr) {
     throw std::runtime_error("VideoFileReaderOp: sws_getContext failed for '" + url + "'");
   }
+}
 
-  const int scaled_bytes =
-      av_image_get_buffer_size(info.sws_dst_fmt, resolved_width_, resolved_height_, 1);
-  if (scaled_bytes <= 0) {
-    throw std::runtime_error("VideoFileReaderOp: av_image_get_buffer_size failed for '" + url +
-                             "'");
+// Rebuild sws_ctx_ (and reallocate scaled_frame_'s storage) when the decoded-frame source
+// parameters have changed since open_stream() or the last reconfigure. No-op on a match.
+void VideoFileReaderOp::reconfigure_sws_if_changed() {
+  if (decoded_frame_->width == sws_src_width_ && decoded_frame_->height == sws_src_height_ &&
+      decoded_frame_->format == sws_src_fmt_) {
+    return;
   }
-  scaled_buffer_.assign(static_cast<std::size_t>(scaled_bytes), 0U);
-  if (av_image_fill_arrays(scaled_frame_->data, scaled_frame_->linesize, scaled_buffer_.data(),
-                           info.sws_dst_fmt, resolved_width_, resolved_height_, 1) < 0) {
-    throw std::runtime_error("VideoFileReaderOp: av_image_fill_arrays failed for '" + url + "'");
+  if (sws_ctx_ != nullptr) {
+    sws_freeContext(sws_ctx_);
+    sws_ctx_ = nullptr;
   }
-  scaled_frame_->width = resolved_width_;
-  scaled_frame_->height = resolved_height_;
-  scaled_frame_->format = info.sws_dst_fmt;
+  sws_src_width_ = decoded_frame_->width;
+  sws_src_height_ = decoded_frame_->height;
+  sws_src_fmt_ = decoded_frame_->format;
+  sws_ctx_ = sws_getContext(sws_src_width_, sws_src_height_,
+                            static_cast<AVPixelFormat>(sws_src_fmt_), resolved_width_,
+                            resolved_height_, static_cast<AVPixelFormat>(sws_dst_fmt_),
+                            SWS_BILINEAR, nullptr, nullptr, nullptr);
+  if (sws_ctx_ == nullptr) {
+    throw std::runtime_error("VideoFileReaderOp: sws_getContext failed on mid-stream "
+                             "parameter change");
+  }
+  // scaled_frame_ dst parameters are fixed (always resolved_width_ x resolved_height_), so its
+  // backing storage does not need to be reallocated.
 }
 
 void VideoFileReaderOp::close_stream() {
@@ -360,7 +392,6 @@ void VideoFileReaderOp::start() {
 void VideoFileReaderOp::stop() {
   close_stream();
   host_buffer_.clear();
-  scaled_buffer_.clear();
 }
 
 expected<bool, Error> VideoFileReaderOp::decode_one_frame() {
@@ -475,8 +506,12 @@ expected<void, Error> VideoFileReaderOp::compute(ExecutionContext& context) {
   }
 
   const PixFmtInfo info = pix_fmt_info(config.output_pix_fmt);
+  // Live-stream resolution/pixel-format changes (RTSP in particular) require rebuilding the
+  // sws context. Pass the decoded frame's own height — codec_ctx_->height is the initial-open
+  // size, which stays stale after a mid-stream parameter change.
+  reconfigure_sws_if_changed();
   const int scaled_lines =
-      sws_scale(sws_ctx_, decoded_frame_->data, decoded_frame_->linesize, 0, codec_ctx_->height,
+      sws_scale(sws_ctx_, decoded_frame_->data, decoded_frame_->linesize, 0, decoded_frame_->height,
                 scaled_frame_->data, scaled_frame_->linesize);
   if (scaled_lines <= 0) {
     return make_unexpected(Error{ErrorCode::kFailure, "VideoFileReaderOp: sws_scale failed for '" +
