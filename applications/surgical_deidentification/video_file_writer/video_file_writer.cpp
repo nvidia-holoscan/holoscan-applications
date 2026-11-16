@@ -159,6 +159,7 @@ VideoFileWriterOp::VideoFileWriterOp(VideoFileWriterOpParams params) {
 VideoFileWriterOp::~VideoFileWriterOp() {
   if (packet_ != nullptr) av_packet_free(&packet_);
   if (src_frame_ != nullptr) av_frame_free(&src_frame_);
+  if (packed_frame_ != nullptr) av_frame_free(&packed_frame_);
   if (sws_ctx_ != nullptr) sws_freeContext(sws_ctx_);
   if (codec_ctx_ != nullptr) avcodec_free_context(&codec_ctx_);
   if (format_ctx_ != nullptr) {
@@ -250,6 +251,11 @@ void VideoFileWriterOp::start() {
   codec_ctx_->framerate = av_d2q(static_cast<double>(config.fps), 65535);
   codec_ctx_->time_base = av_inv_q(codec_ctx_->framerate);
   codec_ctx_->pix_fmt = encode_fmt;
+  // MJPEG rejects limited-range YUV (e.g. yuv420p on FFmpeg 7.x) unless the range is JPEG.
+  const bool full_range = encoder->id == AV_CODEC_ID_MJPEG;
+  if (full_range) {
+    codec_ctx_->color_range = AVCOL_RANGE_JPEG;
+  }
   codec_ctx_->bit_rate = config.bitrate;
   codec_ctx_->gop_size = std::max(1, static_cast<int>(std::lround(config.fps)));
   if (format_ctx_->oformat->flags & AVFMT_GLOBALHEADER) {
@@ -282,16 +288,44 @@ void VideoFileWriterOp::start() {
   if (sws_ctx_ == nullptr) {
     throw std::runtime_error("VideoFileWriterOp: sws_getContext failed for '" + url + "'");
   }
+  if (full_range) {
+    int* inv_table = nullptr;
+    int* table = nullptr;
+    int src_range = 0;
+    int dst_range = 0;
+    int brightness = 0;
+    int contrast = 0;
+    int saturation = 0;
+    if (sws_getColorspaceDetails(sws_ctx_, &inv_table, &src_range, &table, &dst_range, &brightness,
+                                 &contrast, &saturation) < 0 ||
+        sws_setColorspaceDetails(sws_ctx_, inv_table, src_range, table, /*dstRange=*/1, brightness,
+                                 contrast, saturation) < 0) {
+      throw std::runtime_error("VideoFileWriterOp: could not configure full-range output for '" +
+                               url + "'");
+    }
+  }
 
   src_frame_ = av_frame_alloc();
+  packed_frame_ = av_frame_alloc();
   packet_ = av_packet_alloc();
-  if (src_frame_ == nullptr || packet_ == nullptr) {
+  if (src_frame_ == nullptr || packed_frame_ == nullptr || packet_ == nullptr) {
     throw std::runtime_error("VideoFileWriterOp: libav frame/packet allocation failed");
   }
   src_frame_->format = encode_fmt;
   src_frame_->width = config.width;
   src_frame_->height = config.height;
+  if (full_range) {
+    src_frame_->color_range = AVCOL_RANGE_JPEG;
+  }
   if (av_frame_get_buffer(src_frame_, 0) < 0) {
+    throw std::runtime_error("VideoFileWriterOp: av_frame_get_buffer failed for '" + url + "'");
+  }
+  // libswscale's SIMD paths can read past the end of a tightly packed source image, so stage
+  // the input in FFmpeg-allocated storage with aligned, padded rows.
+  packed_frame_->format = info.packed_fmt;
+  packed_frame_->width = config.width;
+  packed_frame_->height = config.height;
+  if (av_frame_get_buffer(packed_frame_, /*align=*/32) < 0) {
     throw std::runtime_error("VideoFileWriterOp: av_frame_get_buffer failed for '" + url + "'");
   }
 
@@ -359,6 +393,7 @@ void VideoFileWriterOp::stop() {
   }
   if (packet_ != nullptr) av_packet_free(&packet_);
   if (src_frame_ != nullptr) av_frame_free(&src_frame_);
+  if (packed_frame_ != nullptr) av_frame_free(&packed_frame_);
   if (sws_ctx_ != nullptr) {
     sws_freeContext(sws_ctx_);
     sws_ctx_ = nullptr;
@@ -370,7 +405,6 @@ void VideoFileWriterOp::stop() {
   }
   header_written_ = false;
   host_buffer_.clear();
-  hwc_u8_buffer_.clear();
 }
 
 expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
@@ -447,7 +481,13 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
     }
   }
 
-  hwc_u8_buffer_.resize(height * width * channels);
+  if (av_frame_make_writable(packed_frame_) < 0 || av_frame_make_writable(src_frame_) < 0) {
+    return make_unexpected(
+        Error{ErrorCode::kFailure, "VideoFileWriterOp: av_frame_make_writable failed"});
+  }
+  std::uint8_t* const dst = packed_frame_->data[0];
+  const auto dst_stride = static_cast<std::size_t>(packed_frame_->linesize[0]);
+  const std::size_t row_bytes = width * channels;
 
   if (!info.is_float) {
     const auto* src = reinterpret_cast<const std::uint8_t*>(host_buffer_.data());
@@ -455,12 +495,14 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
       for (std::size_t c = 0; c < channels; ++c) {
         for (std::size_t y = 0; y < height; ++y) {
           for (std::size_t x = 0; x < width; ++x) {
-            hwc_u8_buffer_[(y * width + x) * channels + c] = src[(c * height + y) * width + x];
+            dst[y * dst_stride + x * channels + c] = src[(c * height + y) * width + x];
           }
         }
       }
     } else {
-      std::memcpy(hwc_u8_buffer_.data(), src, hwc_u8_buffer_.size());
+      for (std::size_t y = 0; y < height; ++y) {
+        std::memcpy(dst + y * dst_stride, src + y * row_bytes, row_bytes);
+      }
     }
   } else {
     // fp32 -> uint8: scale up by 255 and clamp to [0, 255].
@@ -473,27 +515,21 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
       for (std::size_t c = 0; c < channels; ++c) {
         for (std::size_t y = 0; y < height; ++y) {
           for (std::size_t x = 0; x < width; ++x) {
-            hwc_u8_buffer_[(y * width + x) * channels + c] =
-                to_u8(src[(c * height + y) * width + x]);
+            dst[y * dst_stride + x * channels + c] = to_u8(src[(c * height + y) * width + x]);
           }
         }
       }
     } else {
-      for (std::size_t i = 0; i < hwc_u8_buffer_.size(); ++i) {
-        hwc_u8_buffer_[i] = to_u8(src[i]);
+      for (std::size_t y = 0; y < height; ++y) {
+        for (std::size_t i = 0; i < row_bytes; ++i) {
+          dst[y * dst_stride + i] = to_u8(src[y * row_bytes + i]);
+        }
       }
     }
   }
 
-  const std::uint8_t* packed_data[4] = {hwc_u8_buffer_.data(), nullptr, nullptr, nullptr};
-  const int packed_linesize[4] = {static_cast<int>(width * channels), 0, 0, 0};
-
-  if (av_frame_make_writable(src_frame_) < 0) {
-    return make_unexpected(
-        Error{ErrorCode::kFailure, "VideoFileWriterOp: av_frame_make_writable failed"});
-  }
   const int scaled_lines =
-      sws_scale(sws_ctx_, packed_data, packed_linesize, 0, static_cast<int>(height),
+      sws_scale(sws_ctx_, packed_frame_->data, packed_frame_->linesize, 0, static_cast<int>(height),
                 src_frame_->data, src_frame_->linesize);
   if (scaled_lines <= 0) {
     return make_unexpected(Error{ErrorCode::kFailure, "VideoFileWriterOp: sws_scale failed for '" +

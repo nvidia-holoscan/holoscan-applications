@@ -251,4 +251,51 @@ TEST(VideoFileWriterRuntime, WritesMp4WithExpectedDimensionsAndFrameCount) {
   std::filesystem::remove_all(tmp);
 }
 
+// Writes `frame_count` frames with the given codec/container/size and checks that the output
+// opens with the configured dimensions. Covers encoder startup (MJPEG needs full-range YUV) and
+// packed source rows whose width is not a multiple of the swscale SIMD block.
+static void expect_writes_video(const std::string& codec, const std::string& container,
+                                const std::string& file_name, int32_t width, int32_t height) {
+  const auto tmp =
+      std::filesystem::temp_directory_path() / ("video_file_writer_runtime_test_" + codec);
+  std::filesystem::remove_all(tmp);
+  std::filesystem::create_directories(tmp);
+  const auto path = tmp / file_name;
+
+  VideoFileWriterOpParams params;
+  params.path = path;
+  params.tensor_port_name = "frame";
+  params.codec = codec;
+  params.output_container = container;
+  params.input_pix_fmt = "rgb24";
+  params.input_layout = "nhwc";
+  params.strip_batch_dim = false;
+  params.width = width;
+  params.height = height;
+  params.fps = 30.0F;
+  params.bitrate = 1'000'000;
+  params.frame_count = 5;
+
+  std::string err;
+  ASSERT_TRUE(run_writer_pipeline(params, params.frame_count, err)) << err;
+  ASSERT_TRUE(std::filesystem::exists(path)) << "writer never produced " << path;
+  EXPECT_GT(std::filesystem::file_size(path), 0U);
+
+  const ProbeResult probe = probe_mp4(path.string());
+  EXPECT_TRUE(probe.opened);
+  EXPECT_EQ(probe.width, width);
+  EXPECT_EQ(probe.height, height);
+  EXPECT_GT(probe.frame_count, 0);
+
+  std::filesystem::remove_all(tmp);
+}
+
+TEST(VideoFileWriterRuntime, WritesMjpegWithFullRangeYuv) {
+  expect_writes_video("mjpeg", "avi", "out.avi", 128, 128);
+}
+
+TEST(VideoFileWriterRuntime, WritesWidthNotAlignedToSimdBlock) {
+  expect_writes_video("mpeg4", "mp4", "out.mp4", 1912, 16);
+}
+
 }  // namespace holoscan::ops
