@@ -168,8 +168,10 @@ class VideoFileWriterOp : public holoscan::Operator<VideoFileWriterOpParams> {
   SwsContext* sws_ctx_{};
   bool header_written_{};
 
-  std::vector<std::byte> host_buffer_;       ///< Raw copy_to_host() staging of the received Tensor.
-  std::vector<std::uint8_t> hwc_u8_buffer_;  ///< HWC uint8, ready for sws_scale() as the src frame.
+  /// Padded, aligned packed-pixel frame (input_pix_fmt's packed layout) fed to sws_scale().
+  AVFrame* packed_frame_{};
+
+  std::vector<std::byte> host_buffer_;  ///< Raw copy_to_host() staging of the received Tensor.
 
   int32_t frames_written_{};
   int64_t next_pts_{};
