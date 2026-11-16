@@ -14,8 +14,9 @@ The template generates C++ applications only.
 
 ## Create an application
 
-From the repository root, in the environment installed from
-`requirements.txt`, preview the application and then create it:
+Install the repository tools as described in
+[Getting started](../../README.md#getting-started). Then, from the repository
+root, preview the application and create it:
 
 ```bash
 holoscan create my_app --template applications/template --interactive false \

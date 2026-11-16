@@ -14,13 +14,17 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SCRIPTS = REPO / ".github" / "scripts"
 NAME = "template_check"
+# Quotes and backslashes must survive as JSON string values in metadata.json.
+DESCRIPTION = r'Detect "in-body" frames in C:\data'
+AUTHOR = 'Template "Quoted" Author'
+AFFILIATION = "Template Organization"
 CONTEXT = (
     "--context",
-    "description=Template check",
+    f"description={DESCRIPTION}",
     "--context",
-    "full_name=Template Author",
+    f"full_name={AUTHOR}",
     "--context",
-    "affiliation=Template Organization",
+    f"affiliation={AFFILIATION}",
 )
 GENERATED = {
     "CMakeLists.txt",
@@ -87,6 +91,13 @@ class ApplicationTemplateTest(unittest.TestCase):
         sources = [self.app / name for name in GENERATED if not name.endswith((".md", ".json"))]
         result = self.run_script("check_copyright.py", *sources)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_metadata_keeps_free_text_values(self):
+        metadata = json.loads((self.app / "metadata.json").read_text(encoding="utf-8"))
+        application = metadata["application"]
+        self.assertEqual(application["name"], NAME)
+        self.assertEqual(application["description"], DESCRIPTION)
+        self.assertEqual(application["authors"], [{"name": AUTHOR, "affiliation": AFFILIATION}])
 
     def test_cli_discovers_application_but_not_template(self):
         result = self.holoscan("list", "--json")

@@ -9,26 +9,45 @@ checks its own result.
 
 ## Requirements
 
-- Linux on x86_64 or aarch64.
+- Linux on x86_64 or aarch64 with an NVIDIA GPU and a compatible driver.
 - Holoscan SDK {{ cookiecutter.holoscan_version }} or later (C++).
 - CMake 4.0 or later and a C++20 compiler.
-- Python 3.12–3.14 with the CLI pinned in the repository's `requirements.txt`.
+- Python 3.12–3.14 and the CLI pinned in the repository's `requirements.txt`
+  for repository workflows.
 
 Add your application's hardware, dependencies, and data preparation here, and
 link the license terms of any separately downloaded models or datasets.
 
 ## Build and run
 
-From the repository root, set `HOLOSCAN_CLI_BASE_IMAGE` to a development image
-matching the SDK version above, then run a mode:
+Install the repository tools as described in Getting started in the repository
+README. Run the commands below from the repository root.
+
+### In a container
+
+The CLI builds and runs in a container by default. Select the Holoscan SDK image:
 
 ```bash
+export HOLOSCAN_CLI_BASE_IMAGE=nvcr.io/nvidia/clara-holoscan/holoscan:v{{ cookiecutter.holoscan_version }}-cuda13
 holoscan run {{ cookiecutter.project_slug }}
 holoscan run {{ cookiecutter.project_slug }} ci
 ```
 
-To build and run on the host instead, set `HOLOSCAN_SDK_ROOT` to a compatible
-SDK installation and add `--local`.
+Add `--dryrun --verbose` to preview the image and the build and run commands.
+
+### On the host
+
+Install the [requirements](#requirements) on the host and add `--local`:
+
+```bash
+holoscan run {{ cookiecutter.project_slug }} --local
+```
+
+The CLI finds an SDK installed under `/usr`, such as the Debian packages, by
+default. For an SDK installed elsewhere or a source build, set
+`HOLOSCAN_SDK_ROOT=/path/to/holoscan/install`.
+
+### Modes and options
 
 | Mode | Behavior |
 | --- | --- |
@@ -37,14 +56,18 @@ SDK installation and add `--local`.
 
 Each run prints `expected`, `received`, `mismatches`, and a `verdict`, and exits
 nonzero on failure. `--run-args` appends options to the mode's command, for
-example `--run-args='--period-ms 5'`. Run the executable with `--help` for all
-options.
+example `--run-args='--period-ms 5'`; `--run-args='--help'` lists them all.
 
 ## Tests
+
+The CLI supplies the repository's CTest driver; `holoscan test` takes no mode.
+In a container, with `HOLOSCAN_CLI_BASE_IMAGE` selected:
 
 ```bash
 holoscan test {{ cookiecutter.project_slug }} --no-xvfb
 ```
+
+For host tests, add `--local`.
 
 `tests/CMakeLists.txt` registers tests that run the built executable, so they
 need the SDK. Register tests that need no SDK, GPU, or external data in the

@@ -1,11 +1,11 @@
 {
   "application": {
-    "name": "{{ cookiecutter.project_name }}",
-    "description": "{{ cookiecutter.description }}",
+    "name": {{ cookiecutter.project_name | jsonify }},
+    "description": {{ cookiecutter.description | jsonify }},
     "authors": [
       {
-        "name": "{{ cookiecutter.full_name }}",
-        "affiliation": "{{ cookiecutter.affiliation }}"
+        "name": {{ cookiecutter.full_name | jsonify }},
+        "affiliation": {{ cookiecutter.affiliation | jsonify }}
       }
     ],
     "language": "C++",

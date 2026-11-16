@@ -22,6 +22,8 @@ repos:
         args: [--maxkb=1024, --enforce-all]
       - id: check-case-conflict
       - id: check-json
+        # Template metadata becomes JSON only when holoscan create fills in its values.
+        exclude: '^applications/template/\{\{cookiecutter\.project_slug\}\}/'
       - id: check-merge-conflict
       - id: check-symlinks
       - id: check-toml

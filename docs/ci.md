@@ -169,8 +169,8 @@ suite and remain accessible through `holoscan test <application>`.
 `applications/template/` is a `holoscan create` template for new C++
 applications that follow these conventions; the CLI excludes it from
 discovery. The hosted unit tests (`test_application_template.py`) generate an
-application from it with the pinned CLI. They check its files, metadata,
-copyright headers, discovery, `ci` and test dry runs, and SDK-free CMake
+application from it with the pinned CLI. They check its files, metadata
+(including free text with quotes and backslashes), copyright headers, discovery, `ci` and test dry runs, and SDK-free CMake
 configuration once the application is registered in
 `applications/CMakeLists.txt`, and that the template rejects Python and SDKs
 older than 5.0.0.
@@ -243,8 +243,9 @@ integration is implied by the SDK job.
   metadata hook installs the CLI and `jsonschema` into its own pre-commit
   environment, pinned to the versions in `requirements.txt`, so it also runs on
   pre-commit.ci; the hooks require no SDK or GPU. Their regression tests run
-  with the shared driver tests. The SPDX and metadata hooks skip the template's
-  placeholder sources; the template tests check a generated application instead.
+  with the shared driver tests. The JSON, SPDX, and metadata hooks skip the
+  template's placeholder sources; the template tests check a generated
+  application instead.
 
 The SPDX hook requires an Apache-2.0 license identifier and a copyright notice
 with a holder and a valid year or year range. It accepts SPDX copyright notices
