@@ -261,7 +261,7 @@ struct CliArgs {
     }
     try {
       std::size_t pos = 0;
-      const unsigned long parsed = std::stoul(value, &pos);
+      const auto parsed = std::stoul(value, &pos);
       if (pos != std::strlen(value)) {
         std::cerr << arg_name << " requires a non-negative integer (got '" << value << "')\n";
         return false;
@@ -303,7 +303,7 @@ struct CliArgs {
 // `--ci-ticks` invocations even when they share `/tmp`.
 [[nodiscard]] std::filesystem::path make_unique_tmp_dir(std::string_view tag) {
   namespace fs = std::filesystem;
-  std::string tmpl = (fs::temp_directory_path() / (std::string{tag} + "_XXXXXX")).string();
+  std::string tmpl = (fs::temp_directory_path() / (std::string(tag) + "_XXXXXX")).string();
   // mkdtemp mutates its input in place.
   std::vector<char> buf(tmpl.begin(), tmpl.end());
   buf.push_back('\0');
@@ -513,8 +513,9 @@ int main(int argc, char** argv) {
       } else if (reader_params.frame_rate > 0.0F) {
         const double need_s =
             (static_cast<double>(args.ticks) / static_cast<double>(reader_params.frame_rate)) * 1.5;
-        timeout = std::max(std::chrono::seconds{60},
-                           std::chrono::seconds{static_cast<long>(std::ceil(need_s))});
+        timeout = std::max(
+            std::chrono::seconds{60},
+            std::chrono::seconds{static_cast<std::chrono::seconds::rep>(std::ceil(need_s))});
       }
       // Poll both: either the printer saw `ticks` classifications, or the session finished on its
       // own (video ended before `ticks`, operator failed, SIGINT reached ManagedShutdownSignals).
