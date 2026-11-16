@@ -389,7 +389,15 @@ void VideoFileWriterOp::stop() {
   }
   if (format_ctx_ != nullptr && format_ctx_->pb != nullptr &&
       !(format_ctx_->oformat->flags & AVFMT_NOFILE)) {
-    avio_closep(&format_ctx_->pb);
+    const int close_ret = avio_closep(&format_ctx_->pb);
+    if (close_ret < 0) {
+      finalize_failed_ = true;
+      char errbuf[AV_ERROR_MAX_STRING_SIZE] = {};
+      av_strerror(close_ret, errbuf, sizeof(errbuf));
+      HOLOSCAN_LOG_ERROR(
+          "VideoFileWriterOp: avio_closep failed for '{}'; output may be truncated: {}",
+          config.path.string(), errbuf);
+    }
   }
   if (packet_ != nullptr) av_packet_free(&packet_);
   if (src_frame_ != nullptr) av_frame_free(&src_frame_);

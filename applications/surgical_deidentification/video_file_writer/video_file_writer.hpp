@@ -148,8 +148,8 @@ class VideoFileWriterOp : public holoscan::Operator<VideoFileWriterOpParams> {
   /// `params().tensor_port_name`).
   [[nodiscard]] Input<Tensor>* input_port() const { return &input_; }
 
-  /// @brief True if stop() hit a flush or trailer failure; the output file may be truncated or
-  /// unreadable.
+  /// @brief True if stop() hit a flush, trailer, or file-close failure; the output file may be
+  /// truncated or unreadable.
   [[nodiscard]] bool finalize_failed() const { return finalize_failed_; }
 
  private:
