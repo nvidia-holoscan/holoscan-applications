@@ -17,8 +17,8 @@ set(ENDOSCOPY_DATA_DIR "" CACHE PATH "Prepared sample data for real-model integr
 if(DEFINED ENV{HOLOSCAN_SDK_ROOT})
   list(PREPEND CMAKE_PREFIX_PATH "$ENV{HOLOSCAN_SDK_ROOT}")
 elseif(DEFINED ENV{HOLOSCAN_LIB_PATH})
-  # CLI 5.0.0a2 mounts the supplied SDK and sets its library path, but does not
-  # propagate the SDK root into the recursive command for application projects.
+  # The CLI mounts the supplied SDK and exports its library path; derive the SDK
+  # root from it when HOLOSCAN_SDK_ROOT is not set in the recursive command.
   get_filename_component(_endoscopy_sdk_root "$ENV{HOLOSCAN_LIB_PATH}" DIRECTORY)
   list(PREPEND CMAKE_PREFIX_PATH "${_endoscopy_sdk_root}")
 endif()

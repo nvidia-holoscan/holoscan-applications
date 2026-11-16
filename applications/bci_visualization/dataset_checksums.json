@@ -1,0 +1,362 @@
+{
+  "bci_visualization/anatomy_labels_high_res.nii.gz": {
+    "size": 3310033,
+    "sha256": "02693642889da530c33c35e6e3918dc48ca9e2b8409641e754706b0f8dfbb92f"
+  },
+  "data.snirf": {
+    "size": 495907463,
+    "sha256": "c20354d760ee69896e7e106b3ab922eec23a9dc78a2131a0eaf0c19172732e3d"
+  },
+  "devkit_10/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "devkit_10/flow_channel_map.json": {
+    "size": 10840,
+    "sha256": "1a9877dfd8971106792144e9aeac53474e30362f3e6c9ed069ab348f0fa6f7a5"
+  },
+  "devkit_10/flow_mega_jacobian.npy": {
+    "size": 1505105600,
+    "sha256": "b0158e1009775a5014b6ee2d1d86e1e278f576bf7095a7c8853b2fb1c026b088"
+  },
+  "devkit_10/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "devkit_10/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "devkit_10/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "devkit_10/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "devkit_10/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "devkit_10/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "devkit_10/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "devkit_10/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "devkit_12/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "devkit_12/flow_channel_map.json": {
+    "size": 11365,
+    "sha256": "d48747a6e5a1dd34b344f23e09792281e8b74dbe23113e1c442aa47f14caffba"
+  },
+  "devkit_12/flow_mega_jacobian.npy": {
+    "size": 1569804704,
+    "sha256": "c9229910ab15384a271cb4de844607a29ede8470d2b2cec79800ad427ad79ef0"
+  },
+  "devkit_12/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "devkit_12/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "devkit_12/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "devkit_12/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "devkit_12/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "devkit_12/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "devkit_12/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "devkit_12/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "devkit_3/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "devkit_3/flow_channel_map.json": {
+    "size": 2379,
+    "sha256": "3de7d0819b785ee69b332ee326c3de4396fd1830fb167d2d0349ec3a4d7bfde1"
+  },
+  "devkit_3/flow_mega_jacobian.npy": {
+    "size": 350737376,
+    "sha256": "5c19dee48767d501fa7792bc7ef6f4a929a58491356a4e871aa0709b6faaa667"
+  },
+  "devkit_3/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "devkit_3/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "devkit_3/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "devkit_3/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "devkit_3/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "devkit_3/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "devkit_3/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "devkit_3/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "flow_2/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "flow_2/flow_channel_map.json": {
+    "size": 53471,
+    "sha256": "b2dca3113c3306ce46d5c24ac8f9f58430a2df3b3d86ef8db2581fac7ef5044f"
+  },
+  "flow_2/flow_mega_jacobian.npy": {
+    "size": 14247423872,
+    "sha256": "44b5a25c88428da5a8cb0120fe4576e4abe392978599280f32830e55d96c02be"
+  },
+  "flow_2/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "flow_2/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "flow_2/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "flow_2/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "flow_2/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "flow_2/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "flow_2/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "flow_2/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "flow_2_1/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "flow_2_1/flow_channel_map.json": {
+    "size": 58291,
+    "sha256": "6566ff9be4c30abf31c81304736ade4e99077864837d5c04925ac3368c5df7c1"
+  },
+  "flow_2_1/flow_mega_jacobian.npy": {
+    "size": 15514164224,
+    "sha256": "2de30338c8d52a81f0cabe08466a421d0b3d6e2558bfeb7dfdbcd57bfe04ed49"
+  },
+  "flow_2_1/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "flow_2_1/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "flow_2_1/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "flow_2_1/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "flow_2_1/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "flow_2_1/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "flow_2_1/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "flow_2_1/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "flow_2_2/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "flow_2_2/flow_channel_map.json": {
+    "size": 46778,
+    "sha256": "7ff322ef4ddb57f38d344a20959daa762b109579a71bba41b13ca9ff75dca132"
+  },
+  "flow_2_2/flow_mega_jacobian.npy": {
+    "size": 12493737632,
+    "sha256": "714284d951e05d8831ac91d12380dab2b5e318921c2e8ff9e2a8315df6b146c0"
+  },
+  "flow_2_2/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "flow_2_2/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "flow_2_2/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "flow_2_2/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "flow_2_2/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "flow_2_2/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "flow_2_2/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "flow_2_2/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "flow_2_3/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "flow_2_3/flow_channel_map.json": {
+    "size": 52475,
+    "sha256": "863629003a7b4e56627b14b44e1b3a374ad62b0a054be356fe894d65bfb355b7"
+  },
+  "flow_2_3/flow_mega_jacobian.npy": {
+    "size": 13968196160,
+    "sha256": "3181ce154d9cfc6985d7c8a62b2ba6964822da2a5b5bd5012600f7fbaf9ce7a3"
+  },
+  "flow_2_3/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "flow_2_3/voxel_info/idxs_significant_voxels.npy": {
+    "size": 283896,
+    "sha256": "3d84507891d878bb4320437f47f26bd76c7bb7308258e30bc20c20bef9e2adfa"
+  },
+  "flow_2_3/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "flow_2_3/voxel_info/mua.npy": {
+    "size": 567664,
+    "sha256": "046b7b9163399fb10b628229c6a45de415fb26b36288b22475ab494e59c8d786"
+  },
+  "flow_2_3/voxel_info/musp.npy": {
+    "size": 567664,
+    "sha256": "008fad5f94650487dee34ab1ea9b993ad8e07d1ffb72e3a569b3dee465b978fc"
+  },
+  "flow_2_3/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "flow_2_3/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "27c34141c6af9ee7ebc6b941da8cfecd443a1df01e7df359a696327abdcff117"
+  },
+  "flow_2_3/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  },
+  "flow_2_3_753/extinction_coefficients_mua.csv": {
+    "size": 31415,
+    "sha256": "8416aaa0fcdea8fe9b97d6b10fd68ce0e85877640759fc36ed0ba5303696bbce"
+  },
+  "flow_2_3_753/flow_channel_map.json": {
+    "size": 99907,
+    "sha256": "206a4fb4a3fffee8b14542291ae4ac673661620d9d63a9f68a3e6454abdc1616"
+  },
+  "flow_2_3_753/flow_mega_jacobian.npy": {
+    "size": 13981585088,
+    "sha256": "63b21655f98043a5a644df70ceb42e0de60183d4afa0aa0d809b9e87ff9e281f"
+  },
+  "flow_2_3_753/voxel_info/affine.npy": {
+    "size": 256,
+    "sha256": "f1b5accc08c2bfe1e27acd26567ba11c678153826e7060c0ee77bbd9d71e79fd"
+  },
+  "flow_2_3_753/voxel_info/idxs_significant_voxels.npy": {
+    "size": 284168,
+    "sha256": "99b668e2dc3e06074d97c31d987ae33b98f35422c4edfb974015f824b75b7cf4"
+  },
+  "flow_2_3_753/voxel_info/ijk.npy": {
+    "size": 3598688,
+    "sha256": "ef1584923b067bce547a4a518589d67ad6715cc048dc9325ec32de98e372c14a"
+  },
+  "flow_2_3_753/voxel_info/mua.npy": {
+    "size": 568208,
+    "sha256": "d0cdee8bc731ba8d3b3803f4ca4a318dc8d659105c17a6bccb22d2ed73530193"
+  },
+  "flow_2_3_753/voxel_info/musp.npy": {
+    "size": 568208,
+    "sha256": "0e58bb01389387e26cace7754e3426886715f85392b362a71db45fe601b34380"
+  },
+  "flow_2_3_753/voxel_info/resolution.npy": {
+    "size": 152,
+    "sha256": "4f11c312152cb657b19364ecc8697e93c359c5e58296b8bfcf1f01c65a0df504"
+  },
+  "flow_2_3_753/voxel_info/wavelengths.npy": {
+    "size": 144,
+    "sha256": "c70523638a86d1d32af6d6810eac17fb3056e0143ebaac2e72536788206fa075"
+  },
+  "flow_2_3_753/voxel_info/xyz.npy": {
+    "size": 3598688,
+    "sha256": "42cca16cb72ba953b97209a3b9f61385791ce68a7f50bb843ae3bbb5e83bc434"
+  }
+}

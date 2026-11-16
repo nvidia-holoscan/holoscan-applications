@@ -185,9 +185,11 @@ Configure these repository Actions variables to enable the SDK job:
 | `HOLOSCAN_CI_RUNNER_LABELS` | JSON array matching provisioned Linux GPU runners, for example `["self-hosted", "linux", "ARM64", "holoscan"]`. These are illustrative labels, not provisioned infrastructure. |
 | `HOLOSCAN_CI_SDK_IMAGE` | Explicit compatible development image tag or digest. The image must provide all selected applications' SDK components, CUDA/TensorRT/compiler dependencies, Python, CMake 4+, and Ninja. |
 
-Runners need Docker with NVIDIA Container Toolkit and access to the configured
+Self-hosted runners need Actions Runner v2.327.1 or newer for the workflow's
+Node.js 24 actions (see the [checkout requirements](https://github.com/actions/checkout/tree/v7.0.1#checkout-v5)).
+Runners also need Docker with NVIDIA Container Toolkit and access to the configured
 image. Prefer ephemeral runners. The image must expose its SDK through
-`HOLOSCAN_SDK_ROOT` or the CLI's standard `/opt/nvidia/holoscan` location, and
+`HOLOSCAN_SDK_ROOT` or the CLI's default `/usr` location, and
 support application execution as the runner's numeric UID/GID. The container's
 `HOME` is the mounted workspace, so compiler, CMake, and CUDA caches land in
 ignored workspace directories instead of an unwritable default home. It must support
@@ -237,11 +239,12 @@ integration is implied by the SDK job.
 - Repository hooks check SPDX identifiers, copyright notices, internal staging
   references, and Holoscan metadata using `check_copyright.py`, `check_internal_artifacts.py`, and
   `validate_metadata.py` in `.github/scripts/`. Each script accepts filenames
-  as arguments and can also be run directly from the repository root. Metadata
-  validation uses the CLI and `jsonschema` from `requirements.txt`; the hooks
-  require no SDK or GPU. Their regression tests run with the shared driver tests.
-  The SPDX and metadata hooks skip the template's placeholder sources; the
-  template tests check a generated application instead.
+  as arguments and can also be run directly from the repository root. The
+  metadata hook installs the CLI and `jsonschema` into its own pre-commit
+  environment, pinned to the versions in `requirements.txt`, so it also runs on
+  pre-commit.ci; the hooks require no SDK or GPU. Their regression tests run
+  with the shared driver tests. The SPDX and metadata hooks skip the template's
+  placeholder sources; the template tests check a generated application instead.
 
 The SPDX hook requires an Apache-2.0 license identifier and a copyright notice
 with a holder and a valid year or year range. It accepts SPDX copyright notices
