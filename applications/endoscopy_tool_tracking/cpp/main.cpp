@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights
 // reserved. SPDX-License-Identifier: Apache-2.0
 
+#include <unistd.h>
+
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -28,6 +30,9 @@
 #include <holoscan/visualization/holoviz_op.hpp>
 #endif
 
+#include "cae_policy.hpp"
+#include "cae_policy_sink.hpp"
+#include "inference_to_policy.hpp"
 #include "lstm_inference_v5.hpp"
 #include "run_progress.hpp"
 #include "tool_tracking_postprocessor_v5.hpp"
@@ -42,6 +47,7 @@ using std::chrono_literals::operator""s;
 namespace endo = endoscopy_tool_tracking;
 
 enum class DisplayMode { Auto, On, Off };
+enum class CaeMode { Off, Policy, Encode };
 struct Options {
   endo::VideoStreamReplayerParams replay;
   endo::VideoStreamRecorderParams record;
@@ -51,6 +57,10 @@ struct Options {
   std::string model;
   std::string engine_cache;
   std::uint32_t timeout_seconds{300U};
+  CaeMode cae{CaeMode::Off};
+  std::string cae_policy_config;  // empty: built-in defaults (same as cae_policy_default.json)
+  std::string cae_policy_dump;
+  endo::CaePolicyConfig cae_config;
 };
 
 bool env_set(const char* name) {
@@ -118,6 +128,22 @@ Options parse_args(int argc, char** argv) {
       opts.replay.repeat = parse_bool(value, option);
     } else if (option == "--inference") {
       opts.inference = parse_bool(value, option);
+    } else if (option == "--cae") {
+      if (value == "off") {
+        opts.cae = CaeMode::Off;
+      } else if (value == "policy") {
+        opts.cae = CaeMode::Policy;
+      } else if (value == "encode") {
+        opts.cae = CaeMode::Encode;
+      } else {
+        throw std::invalid_argument("--cae requires off, policy or encode");
+      }
+    } else if (option == "--cae-policy-config") {
+      if (value.empty()) throw std::invalid_argument("--cae-policy-config requires a path");
+      opts.cae_policy_config = value;
+    } else if (option == "--cae-policy-dump") {
+      if (value.empty()) throw std::invalid_argument("--cae-policy-dump requires a path");
+      opts.cae_policy_dump = value;
     } else if (option == "--display") {
       opts.display = value == "auto"
                          ? DisplayMode::Auto
@@ -149,10 +175,44 @@ void usage(const char* argv0) {
          "(default: 300)\n"
          "  --synthetic true|false     Deterministic test frames; requires a positive count\n"
          "  --inference true|false     Disable only for replay tests (default: true)\n"
-         "  --width N --height N       RGB dimensions (default: 854x480; fixed for inference)\n";
+         "  --width N --height N       RGB dimensions (default: 854x480; fixed for inference)\n"
+         "  --cae off|policy|encode    Content-adaptive encoding (default: off). policy generates\n"
+         "                             and validates one policy map per frame; encode is not yet\n"
+         "                             available (requires holoscan-multimedia)\n"
+         "  --cae-policy-config FILE   JSON class-to-policy mapping (default: built-in, same as\n"
+         "                             cae_policy_default.json)\n"
+         "  --cae-policy-dump DIR      Write per-frame policy maps to a new directory\n";
+}
+
+// The policy sink creates the dump directory when the run starts. Check now, without creating
+// anything, that the closest existing ancestor is a directory this process can write to.
+void require_creatable_directory(const std::filesystem::path& path) {
+  std::filesystem::path ancestor = path.parent_path();
+  std::error_code error;
+  while (!std::filesystem::exists(ancestor, error) && ancestor.has_relative_path()) {
+    ancestor = ancestor.parent_path();
+  }
+  if (!std::filesystem::is_directory(ancestor, error) ||
+      ::access(ancestor.c_str(), W_OK | X_OK) != 0) {
+    throw std::invalid_argument("cannot create policy dump directory " + path.string() + ": " +
+                                ancestor.string() + " is not a writable directory");
+  }
 }
 
 void validate(Options& opts) {
+  // CAE option combinations need no files, so report them before any data check.
+  if (opts.cae == CaeMode::Encode) {
+    throw std::invalid_argument(
+        "--cae encode requires holoscan-multimedia Delta-QP encoding, which is not available in "
+        "this build; use --cae policy");
+  }
+  if (opts.cae == CaeMode::Off &&
+      (!opts.cae_policy_config.empty() || !opts.cae_policy_dump.empty())) {
+    throw std::invalid_argument("--cae-policy-config and --cae-policy-dump require --cae policy");
+  }
+  if (opts.cae == CaeMode::Policy && !opts.inference) {
+    throw std::invalid_argument("--cae policy requires --inference true");
+  }
   auto& p = opts.replay;
   if (!p.width || p.width > 854 || !p.height || p.height > 480) {
     throw std::invalid_argument("--width must be 1..854 and --height must be 1..480");
@@ -197,6 +257,24 @@ void validate(Options& opts) {
     if (!p.count) p.count = static_cast<std::uint32_t>(frames);
     if (!p.repeat && p.count > frames) {
       throw std::invalid_argument("--count exceeds video length; use --repeat true to loop");
+    }
+  }
+  if (opts.cae == CaeMode::Policy) {
+    if (!opts.cae_policy_config.empty()) {
+      opts.cae_config = endo::load_cae_policy_config(opts.cae_policy_config);
+    }
+    if (!opts.cae_policy_dump.empty()) {
+      // Relative to the working directory, which is the build directory under the holoscan CLI.
+      // Made absolute and normalized (".", ".." and a trailing separator removed) so the checks
+      // below, every message, the startup line and the sink all use the same directory.
+      auto dump = std::filesystem::absolute(opts.cae_policy_dump).lexically_normal();
+      if (!dump.has_filename()) dump = dump.parent_path();
+      opts.cae_policy_dump = dump.string();
+      if (std::filesystem::exists(opts.cae_policy_dump)) {
+        throw std::invalid_argument("policy dump directory already exists: " +
+                                    opts.cae_policy_dump);
+      }
+      require_creatable_directory(opts.cae_policy_dump);
     }
   }
   if (!opts.record.directory.empty()) {
@@ -263,6 +341,7 @@ int execute(const Options& opts) {
   auto progress = std::make_shared<endo::RunProgress>();
   progress->expected = opts.replay.count;
   progress->inference = opts.inference;
+  progress->cae_policy = opts.cae == CaeMode::Policy;
   holoscan::Graph graph{"endoscopy-tool-tracking"};
   auto source = graph.op<endo::VideoStreamReplayerOp>("replayer");
   source.set_params(opts.replay);
@@ -288,6 +367,20 @@ int execute(const Options& opts) {
     graph.add_flow(infer->binary_masks, (*post)->binary_masks, lossless);
     graph.add_flow((*post)->mask, sink->mask, lossless);
     graph.add_flow((*post)->crosses, sink->crosses, lossless);
+    if (opts.cae == CaeMode::Policy) {
+      // Fork the raw model outputs; the display overlay never feeds policy generation.
+      auto policy_op = graph.op<endo::InferenceToPolicyOp>("inference_to_policy");
+      policy_op.set_params(endo::make_inference_to_policy_params(opts.cae_config));
+      auto policy_sink = graph.op<endo::CaePolicySinkOp>("cae_policy_sink", progress,
+                                                         opts.cae_config, opts.cae_policy_dump,
+                                                         opts.replay.width, opts.replay.height);
+      graph.add_flow(infer->probs, policy_op->probs, lossless);
+      graph.add_flow(infer->binary_masks, policy_op->binary_masks, lossless);
+      graph.add_flow(policy_op->policy, policy_sink->policy, lossless);
+      std::cout << "endoscopy_tool_tracking: cae=policy " << endo::describe(opts.cae_config);
+      if (!opts.cae_policy_dump.empty()) std::cout << " dump=" << opts.cae_policy_dump;
+      std::cout << '\n';
+    }
   }
 #if ENDOSCOPY_ENABLE_VISUALIZATION
   if (display) {
@@ -332,6 +425,12 @@ int execute(const Options& opts) {
       compile_options.deployment.bind_tensor_output_device(holoscan::TensorOutputDevicePlacement{
           .operator_path = op, .output_port = port, .device = holoscan::DeviceId{0}});
     }
+    if (opts.cae == CaeMode::Policy) {
+      compile_options.deployment.bind_tensor_output_device(
+          holoscan::TensorOutputDevicePlacement{.operator_path = "inference_to_policy",
+                                                .output_port = "policy",
+                                                .device = holoscan::DeviceId{0}});
+    }
   }
   const auto plan = holoscan::compile(graph, std::move(compile_options));
   if (!plan.ok()) {
@@ -362,11 +461,17 @@ int execute(const Options& opts) {
   const bool passed = finished && session.diagnostics().empty() &&
                       session.termination() == holoscan::RunTermination::kRequestedCompleted &&
                       progress->consumed == opts.replay.count &&
-                      (!opts.inference || progress->tracked == opts.replay.count);
+                      (!opts.inference || progress->tracked == opts.replay.count) &&
+                      (opts.cae != CaeMode::Policy || progress->policies == opts.replay.count);
   std::cout << "endoscopy_tool_tracking: expected=" << opts.replay.count
             << " consumed=" << progress->consumed.load() << " tracked=" << progress->tracked.load()
             << " inference=" << (opts.inference ? "on" : "off")
             << " verdict=" << (passed ? "PASS" : "FAIL") << '\n';
+  if (opts.cae == CaeMode::Policy) {
+    // Separate line so the established summary above is unchanged in every mode.
+    std::cout << "endoscopy_tool_tracking: cae=policy policies=" << progress->policies.load()
+              << " verdict=" << (passed ? "PASS" : "FAIL") << '\n';
+  }
   return passed ? 0 : 1;
 }
 }  // namespace

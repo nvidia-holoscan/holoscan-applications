@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "class_threshold": 0.5,
+  "mask_threshold": 0.5,
+  "background_policy": "deprioritize",
+  "classes": {
+    "grasper": "neutral",
+    "bipolar": "neutral",
+    "hook": "neutral",
+    "scissors": "neutral",
+    "clipper": "neutral",
+    "irrigator": "neutral",
+    "specimen_bag": "neutral"
+  }
+}
