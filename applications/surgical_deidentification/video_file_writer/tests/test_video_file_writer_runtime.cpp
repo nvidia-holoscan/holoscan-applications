@@ -21,6 +21,7 @@ extern "C" {
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -57,12 +58,14 @@ constexpr DLDataType kUInt8{kDLUInt, 8U, 1U};
 class FrameFeeder final : public holoscan::Operator<> {
  public:
   FrameFeeder(std::string port_name, int32_t height, int32_t width, int32_t frames,
-              DLDataType dtype = kUInt8)
+              DLDataType dtype = kUInt8, float float_value = 0.0F)
       : port_name_(std::move(port_name)),
         height_(height),
         width_(width),
         frames_(frames),
-        dtype_(dtype) {}
+        dtype_(dtype),
+        float_pixels_(dtype.code == kDLFloat ? static_cast<std::size_t>(height) * width * 3U : 0U,
+                      float_value) {}
 
   void setup(holoscan::OperatorSpec& spec) override {
     const std::size_t byte_span = static_cast<std::size_t>(height_) *
@@ -107,10 +110,14 @@ class FrameFeeder final : public holoscan::Operator<> {
       return holoscan::make_unexpected(std::move(writer).error());
     }
     // Fill with (sent_ * 11) mod 256 so each frame is distinguishable by codec stats.
-    // Typed regression inputs use zero, valid as both int32 and normalized float32 pixels.
+    // Float regression inputs include non-finite values that memset cannot represent.
     const std::uint8_t fill =
         dtype_.bits == 8U ? static_cast<std::uint8_t>((sent_ * 11) & 0xFF) : 0U;
-    if (cudaMemsetAsync(writer->data(), fill, writer->byte_size(), stream) != cudaSuccess) {
+    const auto status = dtype_.code == kDLFloat
+                            ? cudaMemcpyAsync(writer->data(), float_pixels_.data(),
+                                              writer->byte_size(), cudaMemcpyHostToDevice, stream)
+                            : cudaMemsetAsync(writer->data(), fill, writer->byte_size(), stream);
+    if (status != cudaSuccess) {
       return holoscan::make_unexpected(holoscan::Error{holoscan::ErrorCode::kFailure});
     }
     auto committed = std::move(*writer).commit();
@@ -133,6 +140,7 @@ class FrameFeeder final : public holoscan::Operator<> {
   int32_t frames_{};
   int32_t sent_{};
   DLDataType dtype_{};
+  std::vector<float> float_pixels_;
   holoscan::Output<holoscan::Tensor> output_;
 };
 
@@ -142,9 +150,10 @@ struct ProbeResult {
   int width{};
   int height{};
   int frame_count{};
+  int first_luma{-1};
 };
 
-[[nodiscard]] ProbeResult probe_mp4(const std::string& path) {
+[[nodiscard]] ProbeResult probe_mp4(const std::string& path, bool decode_first_frame = false) {
   ProbeResult r;
   AVFormatContext* ctx = nullptr;
   if (avformat_open_input(&ctx, path.c_str(), nullptr, nullptr) < 0) {
@@ -169,15 +178,38 @@ struct ProbeResult {
   const auto* par = ctx->streams[video_idx]->codecpar;
   r.width = par->width;
   r.height = par->height;
+  AVCodecContext* decoder = nullptr;
+  AVFrame* decoded_frame = nullptr;
+  if (decode_first_frame) {
+    const AVCodec* codec = avcodec_find_decoder(par->codec_id);
+    decoder = avcodec_alloc_context3(codec);
+    if (decoder != nullptr && avcodec_parameters_to_context(decoder, par) >= 0 &&
+        avcodec_open2(decoder, codec, nullptr) >= 0) {
+      decoded_frame = av_frame_alloc();
+    }
+  }
   // Count packets on the video stream (one packet ≈ one frame for the codecs we exercise).
   AVPacket* pkt = av_packet_alloc();
   while (av_read_frame(ctx, pkt) >= 0) {
     if (pkt->stream_index == video_idx) {
       ++r.frame_count;
+      if (decoded_frame != nullptr && r.first_luma < 0 && avcodec_send_packet(decoder, pkt) >= 0 &&
+          avcodec_receive_frame(decoder, decoded_frame) >= 0 &&
+          decoded_frame->format == AV_PIX_FMT_YUV420P) {
+        r.first_luma = decoded_frame->data[0][0];
+      }
     }
     av_packet_unref(pkt);
   }
+  // Flush decoder delay for a one-frame clip.
+  if (decoded_frame != nullptr && r.first_luma < 0 && avcodec_send_packet(decoder, nullptr) >= 0 &&
+      avcodec_receive_frame(decoder, decoded_frame) >= 0 &&
+      decoded_frame->format == AV_PIX_FMT_YUV420P) {
+    r.first_luma = decoded_frame->data[0][0];
+  }
   av_packet_free(&pkt);
+  av_frame_free(&decoded_frame);
+  avcodec_free_context(&decoder);
   avformat_close_input(&ctx);
   return r;
 }
@@ -190,12 +222,13 @@ struct WriterRunResult {
 
 [[nodiscard]] bool run_writer_pipeline(VideoFileWriterOpParams params, int32_t frames_to_send,
                                        std::string& err_message, DLDataType dtype = kUInt8,
-                                       WriterRunResult* result = nullptr) {
+                                       WriterRunResult* result = nullptr,
+                                       float float_value = 0.0F) {
   try {
     holoscan::Graph graph{"video-file-writer-runtime-test"};
     const auto writer = graph.op<VideoFileWriterOp>("writer", params);
     const auto feeder = graph.op<FrameFeeder>("feeder", params.tensor_port_name, params.height,
-                                              params.width, frames_to_send, dtype);
+                                              params.width, frames_to_send, dtype, float_value);
     graph.add_flow(*feeder->output_port(), *writer->input_port(),
                    holoscan::ConnectionOptions{.queue_depth = 4U});
     graph.set_default_clock(graph.add_clock<holoscan::RealtimeClock>("clock"));
@@ -379,6 +412,29 @@ TEST(VideoFileWriterRuntime, WritesFloat32TensorForRgbFp32) {
   EXPECT_EQ(probe.width, 128);
   EXPECT_EQ(probe.height, 128);
   EXPECT_EQ(probe.frame_count, 3);
+  std::filesystem::remove_all(tmp);
+}
+
+// Run this case with -fsanitize=float-cast-overflow to catch a NaN-to-integer conversion even
+// on architectures where the unsanitized conversion happens to yield zero.
+TEST(VideoFileWriterRuntime, WritesNaNFloat32TensorAsDecodableBlackFrame) {
+  const auto tmp = std::filesystem::temp_directory_path() / "video_file_writer_nan";
+  std::filesystem::create_directories(tmp);
+  VideoFileWriterOpParams params;
+  params.path = tmp / "out.mp4";
+  params.input_pix_fmt = "rgb_fp32";
+  params.input_layout = "nhwc";
+  params.width = 128;
+  params.height = 128;
+
+  std::string err;
+  ASSERT_TRUE(run_writer_pipeline(params, 1, err, DLDataType{kDLFloat, 32U, 1U}, nullptr,
+                                  std::numeric_limits<float>::quiet_NaN()))
+      << err;
+  const ProbeResult probe = probe_mp4(params.path.string(), true);
+  ASSERT_TRUE(probe.opened);
+  EXPECT_EQ(probe.frame_count, 1);
+  EXPECT_EQ(probe.first_luma, 16);  // Black in the encoder's limited-range YUV420P format.
   std::filesystem::remove_all(tmp);
 }
 

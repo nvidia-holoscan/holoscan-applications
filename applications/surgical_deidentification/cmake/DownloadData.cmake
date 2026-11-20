@@ -33,8 +33,16 @@ set(_sd_mp4         "${_sd_data_root}/sample_clip_out_of_body_detection.mp4")
 set(_sd_onnx        "${_sd_data_root}/out_of_body_detection.onnx")
 set(_sd_stamp       "${_sd_data_root}/.ngc_version")
 
+# An explicit input also invalidates existing data when a fresh build directory has no
+# previous command hash to compare. configure_file preserves its timestamp if unchanged.
+set(_sd_download_inputs "${CMAKE_CURRENT_BINARY_DIR}/download_data.inputs")
+set(_sd_fetch_script "${CMAKE_CURRENT_LIST_DIR}/fetch_and_extract.cmake")
+configure_file("${CMAKE_CURRENT_LIST_DIR}/download_data.inputs.in"
+               "${_sd_download_inputs}" @ONLY)
+
 add_custom_command(
     OUTPUT "${_sd_mp4}" "${_sd_onnx}" "${_sd_stamp}"
+    DEPENDS "${_sd_download_inputs}" "${_sd_fetch_script}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_sd_data_root}"
     COMMAND ${CMAKE_COMMAND}
             -DURL=${SURGICAL_DEID_NGC_URL}
@@ -45,7 +53,10 @@ add_custom_command(
             -DSTAMP=${_sd_stamp}
             -DMP4=${_sd_mp4}
             -DONNX=${_sd_onnx}
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/fetch_and_extract.cmake"
+            -P "${_sd_fetch_script}"
+    # Archive members can have old timestamps. Mark successful outputs current so the
+    # configured input does not cause the fetch command to run again on every build.
+    COMMAND ${CMAKE_COMMAND} -E touch_nocreate "${_sd_mp4}" "${_sd_onnx}" "${_sd_stamp}"
     VERBATIM
     COMMENT "Downloading endoscopy_out_of_body_detection (${SURGICAL_DEID_NGC_VERSION}) from NGC"
 )

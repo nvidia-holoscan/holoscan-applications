@@ -7,6 +7,16 @@ include(CTest)
 
 option(HOLOHUB_BUILD_CPP "Build support for C++" ON)
 
+# Local archive fixtures exercise download invalidation without the SDK or network access.
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME surgical_deid_data_download
+        COMMAND ${Python3_EXECUTABLE} -m unittest discover
+            -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p test_download_data.py -v)
+    set_tests_properties(surgical_deid_data_download PROPERTIES
+        LABELS "cpu;data;surgical_deidentification" TIMEOUT 60)
+endif()
+
 if(HOLOHUB_BUILD_CPP)
     add_subdirectory(cpp)
 endif()

@@ -58,6 +58,7 @@ target_link_libraries(video_file_writer_runtime_test
         CUDA::cudart
         PkgConfig::TEST_AVFORMAT
         PkgConfig::TEST_AVCODEC
+        PkgConfig::AVUTIL
         GTest::gtest_main
         GTest::gmock
 )

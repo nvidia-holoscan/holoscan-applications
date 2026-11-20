@@ -352,6 +352,9 @@ expected<void, Error> VideoFileWriterOp::send_and_drain(AVFrame* frame) {
           ErrorCode::kFailure,
           "VideoFileWriterOp: avcodec_receive_packet failed for '" + config.path.string() + "'"});
     }
+    // Some encoders leave duration unset. Each input frame spans one codec time-base tick;
+    // without this duration the MP4 muxer can mark the final frame for discard.
+    if (packet_->duration == 0) packet_->duration = 1;
     av_packet_rescale_ts(packet_, codec_ctx_->time_base, stream_->time_base);
     packet_->stream_index = stream_->index;
     if (av_interleaved_write_frame(format_ctx_, packet_) < 0) {
@@ -522,9 +525,10 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
       }
     }
   } else {
-    // fp32 -> uint8: scale up by 255 and clamp to [0, 255].
+    // fp32 -> uint8: map NaN to black, scale up by 255, and clamp to [0, 255].
     const auto* src = reinterpret_cast<const float*>(host_buffer_.data());
     auto to_u8 = [](float value) -> std::uint8_t {
+      if (std::isnan(value)) return 0;
       const float scaled = value * 255.0F;
       return static_cast<std::uint8_t>(std::clamp(scaled, 0.0F, 255.0F));
     };

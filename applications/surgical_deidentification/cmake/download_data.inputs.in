@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+@SURGICAL_DEID_NGC_VERSION@
+@SURGICAL_DEID_NGC_URL@
+@SURGICAL_DEID_NGC_SHA256@
