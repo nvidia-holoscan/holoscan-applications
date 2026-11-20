@@ -429,6 +429,16 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
     return {};
   }
 
+  const PixFmtInfo info = pix_fmt_info(config.input_pix_fmt);
+  const DLDataType pixel_dtype =
+      info.is_float ? DLDataType{kDLFloat, 32U, 1U} : DLDataType{kDLUInt, 8U, 1U};
+  if (!dtype_equal(tensor.dtype(), pixel_dtype)) {
+    return make_unexpected(
+        Error{ErrorCode::kInvalidArgument,
+              "VideoFileWriterOp: received Tensor dtype does not match input_pix_fmt='" +
+                  config.input_pix_fmt + "' (expected " + (info.is_float ? "float32" : "uint8") +
+                  " with one lane)"});
+  }
   if (config.expected_dtype && !dtype_equal(tensor.dtype(), *config.expected_dtype)) {
     return make_unexpected(
         Error{ErrorCode::kFailure,
@@ -451,7 +461,6 @@ expected<void, Error> VideoFileWriterOp::compute(ExecutionContext& context) {
     return make_unexpected(std::move(copied).error());
   }
 
-  const PixFmtInfo info = pix_fmt_info(config.input_pix_fmt);
   const bool nchw = is_nchw(config.input_layout);
   const std::size_t height = static_cast<std::size_t>(config.height);
   const std::size_t width = static_cast<std::size_t>(config.width);

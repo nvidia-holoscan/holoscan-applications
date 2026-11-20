@@ -56,18 +56,24 @@ constexpr DLDataType kUInt8{kDLUInt, 8U, 1U};
 /// the encoder has non-degenerate content to compress.
 class FrameFeeder final : public holoscan::Operator<> {
  public:
-  FrameFeeder(std::string port_name, int32_t height, int32_t width, int32_t frames)
-      : port_name_(std::move(port_name)), height_(height), width_(width), frames_(frames) {}
+  FrameFeeder(std::string port_name, int32_t height, int32_t width, int32_t frames,
+              DLDataType dtype = kUInt8)
+      : port_name_(std::move(port_name)),
+        height_(height),
+        width_(width),
+        frames_(frames),
+        dtype_(dtype) {}
 
   void setup(holoscan::OperatorSpec& spec) override {
-    const std::size_t byte_span =
-        static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_) * 3U;
+    const std::size_t byte_span = static_cast<std::size_t>(height_) *
+                                  static_cast<std::size_t>(width_) * 3U * (dtype_.bits / 8U) *
+                                  dtype_.lanes;
     spec.output(output_, port_name_)
         .produces_tensor(holoscan::TensorOutputSpec{
             .representation =
                 holoscan::TensorRepresentation{
                     .memory_kind = holoscan::MemoryKind::kCudaDevice,
-                    .dtype = kUInt8,
+                    .dtype = dtype_,
                     .rank = 3U,
                 },
             .bounds = holoscan::TensorBounds{.max_rank = 3U, .max_byte_span = byte_span},
@@ -92,7 +98,7 @@ class FrameFeeder final : public holoscan::Operator<> {
     }
     const std::vector<int64_t> shape{height_, width_, 3};
     auto loan =
-        output_.allocate_tensor(holoscan::TensorLoanRequest{.shape = shape, .dtype = kUInt8});
+        output_.allocate_tensor(holoscan::TensorLoanRequest{.shape = shape, .dtype = dtype_});
     if (!loan) {
       return holoscan::make_unexpected(std::move(loan).error());
     }
@@ -101,7 +107,9 @@ class FrameFeeder final : public holoscan::Operator<> {
       return holoscan::make_unexpected(std::move(writer).error());
     }
     // Fill with (sent_ * 11) mod 256 so each frame is distinguishable by codec stats.
-    const std::uint8_t fill = static_cast<std::uint8_t>((sent_ * 11) & 0xFF);
+    // Typed regression inputs use zero, valid as both int32 and normalized float32 pixels.
+    const std::uint8_t fill =
+        dtype_.bits == 8U ? static_cast<std::uint8_t>((sent_ * 11) & 0xFF) : 0U;
     if (cudaMemsetAsync(writer->data(), fill, writer->byte_size(), stream) != cudaSuccess) {
       return holoscan::make_unexpected(holoscan::Error{holoscan::ErrorCode::kFailure});
     }
@@ -124,6 +132,7 @@ class FrameFeeder final : public holoscan::Operator<> {
   int32_t width_{};
   int32_t frames_{};
   int32_t sent_{};
+  DLDataType dtype_{};
   holoscan::Output<holoscan::Tensor> output_;
 };
 
@@ -173,13 +182,20 @@ struct ProbeResult {
   return r;
 }
 
+struct WriterRunResult {
+  holoscan::RunTermination termination{};
+  std::vector<holoscan::Diagnostic> diagnostics;
+  bool finalize_failed{};
+};
+
 [[nodiscard]] bool run_writer_pipeline(VideoFileWriterOpParams params, int32_t frames_to_send,
-                                       std::string& err_message) {
+                                       std::string& err_message, DLDataType dtype = kUInt8,
+                                       WriterRunResult* result = nullptr) {
   try {
     holoscan::Graph graph{"video-file-writer-runtime-test"};
     const auto writer = graph.op<VideoFileWriterOp>("writer", params);
     const auto feeder = graph.op<FrameFeeder>("feeder", params.tensor_port_name, params.height,
-                                              params.width, frames_to_send);
+                                              params.width, frames_to_send, dtype);
     graph.add_flow(*feeder->output_port(), *writer->input_port(),
                    holoscan::ConnectionOptions{.queue_depth = 4U});
     graph.set_default_clock(graph.add_clock<holoscan::RealtimeClock>("clock"));
@@ -203,6 +219,16 @@ struct ProbeResult {
     std::this_thread::sleep_for(std::chrono::milliseconds(run_ms));
     session.request_stop();
     session.wait();
+    if (result != nullptr) {
+      result->termination = session.termination();
+      result->diagnostics.assign(session.diagnostics().begin(), session.diagnostics().end());
+      result->finalize_failed = writer->finalize_failed();
+    } else if (!session.diagnostics().empty() ||
+               session.termination() == holoscan::RunTermination::kFailed ||
+               writer->finalize_failed()) {
+      err_message = "writer pipeline reported a runtime or finalization error";
+      return false;
+    }
     return true;
   } catch (const std::exception& e) {
     err_message = std::string("exception: ") + e.what();
@@ -296,6 +322,64 @@ TEST(VideoFileWriterRuntime, WritesMjpegWithFullRangeYuv) {
 
 TEST(VideoFileWriterRuntime, WritesWidthNotAlignedToSimdBlock) {
   expect_writes_video("mpeg4", "mp4", "out.mp4", 1912, 16);
+}
+
+TEST(VideoFileWriterRuntime, RejectsInt32TensorForRgbFp32) {
+  const auto tmp = std::filesystem::temp_directory_path() / "video_file_writer_dtype_rejection";
+  std::filesystem::create_directories(tmp);
+  constexpr DLDataType kInt32{kDLInt, 32U, 1U};
+
+  // The inferred pixel dtype must hold whether expected_dtype is omitted or explicitly agrees
+  // with the incompatible source. Shape and byte count deliberately match a float32 frame.
+  for (const bool set_expected_dtype : {false, true}) {
+    SCOPED_TRACE(set_expected_dtype);
+    VideoFileWriterOpParams params;
+    params.path = tmp / "out.mp4";
+    params.input_pix_fmt = "rgb_fp32";
+    params.input_layout = "nhwc";
+    params.width = 128;
+    params.height = 128;
+    if (set_expected_dtype) {
+      params.expected_dtype = kInt32;
+    }
+    WriterRunResult result;
+    std::string err;
+    ASSERT_TRUE(run_writer_pipeline(params, 1, err, kInt32, &result)) << err;
+    EXPECT_EQ(result.termination, holoscan::RunTermination::kFailed);
+    EXPECT_TRUE(std::any_of(result.diagnostics.begin(), result.diagnostics.end(),
+                            [](const holoscan::Diagnostic& diagnostic) {
+                              return diagnostic.severity == holoscan::DiagnosticSeverity::kError &&
+                                     diagnostic.detail &&
+                                     diagnostic.detail->operator_path == "writer" &&
+                                     diagnostic.detail->error.code ==
+                                         holoscan::ErrorCode::kInvalidArgument;
+                            }));
+  }
+  std::filesystem::remove_all(tmp);
+}
+
+TEST(VideoFileWriterRuntime, WritesFloat32TensorForRgbFp32) {
+  const auto tmp = std::filesystem::temp_directory_path() / "video_file_writer_fp32";
+  std::filesystem::create_directories(tmp);
+  VideoFileWriterOpParams params;
+  params.path = tmp / "out.mp4";
+  params.input_pix_fmt = "rgb_fp32";
+  params.input_layout = "nhwc";
+  params.width = 128;
+  params.height = 128;
+
+  WriterRunResult result;
+  std::string err;
+  ASSERT_TRUE(run_writer_pipeline(params, 3, err, DLDataType{kDLFloat, 32U, 1U}, &result)) << err;
+  EXPECT_EQ(result.termination, holoscan::RunTermination::kStopped);
+  EXPECT_TRUE(result.diagnostics.empty());
+  EXPECT_FALSE(result.finalize_failed);
+  const ProbeResult probe = probe_mp4(params.path.string());
+  ASSERT_TRUE(probe.opened);
+  EXPECT_EQ(probe.width, 128);
+  EXPECT_EQ(probe.height, 128);
+  EXPECT_EQ(probe.frame_count, 3);
+  std::filesystem::remove_all(tmp);
 }
 
 }  // namespace holoscan::ops

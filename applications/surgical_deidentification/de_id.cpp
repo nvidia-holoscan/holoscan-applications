@@ -47,6 +47,7 @@
 #include <holoscan/operators/tensor_preprocessor/tensor_preprocessor.hpp>
 #include <holoscan/time/realtime_clock.hpp>
 
+#include "classification_output.hpp"
 #include "synthetic_mp4.hpp"
 #include "video_file_reader.hpp"
 
@@ -157,12 +158,9 @@ class ClassificationPrinterOp final : public holoscan::Operator<> {
     }
     const holoscan::Tensor& tensor = *sample;
 
-    const auto element_count = static_cast<std::size_t>(tensor.nbytes()) / sizeof(float);
-    if (element_count != 2U) {
-      std::cout << "frame " << ++counter_ << ": unexpected output size (" << element_count
-                << " elements, expected 2) -- pipeline ran end-to-end but classification "
-                   "interpretation needs tuning for this model output shape\n";
-      return {};
+    auto valid = surgical_deid::validate_classification_output(tensor);
+    if (!valid) {
+      return holoscan::make_unexpected(std::move(valid).error());
     }
 
     float logits[2];

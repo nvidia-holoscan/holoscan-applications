@@ -19,6 +19,20 @@ endif()
 # Needed by gtest_discover_tests() below.
 include(GoogleTest)
 
+add_executable(surgical_deid_classification_output_test test_classification_output.cpp)
+target_include_directories(surgical_deid_classification_output_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+target_link_libraries(surgical_deid_classification_output_test
+    PRIVATE holoscan::core GTest::gtest_main
+)
+gtest_discover_tests(surgical_deid_classification_output_test
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES
+        LABELS "cpu;unit;surgical_deidentification"
+        TIMEOUT 60
+)
+
 # ---------------------------------------------------------------------------------------------
 # App-level config schema smoke test. Loads the shipped config.yaml and dispatches each
 # sub-section through the matching operator's from_yaml_node() helper, catching schema drift

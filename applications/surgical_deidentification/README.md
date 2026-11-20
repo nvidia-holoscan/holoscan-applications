@@ -66,10 +66,10 @@ Two ways:
 - **Fetch on demand**: `cmake --build <build-dir> --target de_id_download_data`.
 
 Both drop the resource at `${HOLOHUB_DATA_DIR}/endoscopy_out_of_body_detection/`.
-The CMake default is `<build>/data`; to align with the Holoscan CLI's default
-`<repository>/data` layout (what the baked `config.yaml` expects to be mounted at
-`/data` inside the container), configure with
-`-DHOLOHUB_DATA_DIR=<repository>/data`. Pin a different NGC version with
+The CMake default is `<build>/data`; the Holoscan CLI supplies
+`HOLOHUB_DATA_DIR` automatically as `<repository>/data` in its execution environment.
+Mount that directory at `/data` inside the container for the stock `config.yaml`.
+Pin a different NGC version with
 `-DSURGICAL_DEID_NGC_VERSION=<ver>`. The e2e ctest picks the files up automatically
 and no longer skips.
 
@@ -95,7 +95,7 @@ The detection model and sample datasets are available on [NGC](https://catalog.n
 
 The paths above match the stock `config.yaml` after mounting `<data_root>` at `/data`
 inside the container (see **Run** below). When the build is configured with
-`-DHOLOHUB_DATA_DIR=<repository>/data -DSURGICAL_DEID_DOWNLOAD_DATA=ON` the CMake download
+`--configure-args=-DSURGICAL_DEID_DOWNLOAD_DATA=ON` the CMake download
 target places the resource at `<repository>/data/endoscopy_out_of_body_detection/`, matching
 the Holoscan CLI's default data directory. Mount that directory at `/data` to run
 end-to-end without copying files. Any other layout works too — just edit
@@ -107,7 +107,7 @@ end-to-end without copying files. Any other layout works too — just edit
 # One-time: build the image and project, fetching the NGC dataset into <repository>/data/
 # so the Holoscan CLI's default data directory lines up with the stock config.yaml.
 holoscan build surgical_deidentification \
-    --configure-args="-DHOLOHUB_DATA_DIR=$PWD/data -DSURGICAL_DEID_DOWNLOAD_DATA=ON"
+    --configure-args=-DSURGICAL_DEID_DOWNLOAD_DATA=ON
 
 # Each run: mount the dataset directory at /data and launch.
 holoscan run surgical_deidentification \
@@ -198,9 +198,10 @@ holoscan run surgical_deidentification \
     --docker-opts="-v $PWD/data:/data" \
     --run-args="--ticks 500"
 
-# Try an edited config without touching the checkout — mount it over the installed one.
+# Run with an edited config mounted at an explicit container path.
 holoscan run surgical_deidentification \
-    --docker-opts="-v $PWD/data:/data -v $PWD/my_overrides.yaml:/workspace/bin/config.yaml:ro"
+    --docker-opts="-v $PWD/data:/data -v $PWD/my_overrides.yaml:/tmp/de_id_config.yaml:ro" \
+    --run-args="--config /tmp/de_id_config.yaml"
 ```
 
 ## Configuration
@@ -220,30 +221,37 @@ relevant knobs:
 - `video_source.loop`, `frame_count`, `frame_rate` — reader-side pacing knobs; the stock
   config sets `loop: true` and `frame_count: 0` so the pipeline runs until stopped.
 
-The CLI ships `config.yaml` alongside the installed `de_id` binary. To swap in a
-different config without rebuilding, mount it over the installed one at run time as
+The CLI copies `config.yaml` alongside the built `de_id` binary. To swap in a
+different config, mount it and pass its path with `--config` as
 shown in the examples above, or edit `config.yaml` in the checkout and rebuild.
 
 ## Tests and CI
 
-The application ships three tiers of tests, registered with CTest. The tier that runs depends
+The application ships four tiers of tests, registered with CTest. The tier that runs depends
 on how the project is configured.
 
-| Tier               | Count | Needs Holoscan SDK | Needs NGC dataset | Label           |
-|--------------------|------:|--------------------|-------------------|-----------------|
-| YAML / schema unit |    24 | yes                | no                | `cpu;unit`      |
-| Operator runtime   |     5 | yes                | no                | `gpu;runtime`   |
-| de_id binary smoke |     1 | yes                | no                | `cpu;smoke`     |
-| de_id binary e2e   |     1 | yes                | yes               | `gpu;functional`|
+| Tier                     | Needs Holoscan SDK | Needs NGC dataset | Label            |
+|--------------------------|--------------------|-------------------|------------------|
+| YAML / tensor validation | yes                | no                | `cpu;unit`       |
+| Operator runtime         | yes                | no                | `gpu;runtime`    |
+| de_id binary smoke       | yes                | no                | `cpu;smoke`      |
+| de_id binary e2e         | yes                | yes               | `gpu;functional` |
 
 Running `ctest` against a full build (`HOLOHUB_BUILD_CPP=ON -DBUILD_TESTING=ON
--DSURGICAL_DEID_DOWNLOAD_DATA=ON`) exercises all 31 tests, including a real TensorRT inference
+-DSURGICAL_DEID_DOWNLOAD_DATA=ON`) exercises all registered tests, including a real TensorRT inference
 pass over the NGC `endoscopy_out_of_body_detection` model and clip. Without the dataset, the
-e2e test returns CTest's skip code (`77`) and the remaining 30 still run.
+e2e test returns CTest's skip code (`77`) and the remaining tests still run.
+
+Run the complete suite through the CLI, enabling the dataset download in its test build:
+
+```sh
+holoscan test surgical_deidentification --no-xvfb \
+    --cmake-options=-DSURGICAL_DEID_DOWNLOAD_DATA=ON
+```
 
 Hosted CI (`HOLOHUB_BUILD_CPP=OFF -DBUILD_TESTING=ON`) skips the `de_id` binary (both the smoke
-and the e2e test) and the application-level config tests, and runs the 23 CPU / runtime
-operator tests (18 YAML + 5 runtime) directly from the top-level `CMakeLists.txt`. If the
+and the e2e test) and the application-level config tests, and runs the CPU / runtime
+operator tests directly from the top-level `CMakeLists.txt`. If the
 Holoscan SDK is not installed on the runner, the block is skipped entirely with a
 `message(STATUS …)` note and configure still succeeds.
 
