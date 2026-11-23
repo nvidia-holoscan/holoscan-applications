@@ -76,7 +76,19 @@ The principal security boundaries are:
    GPU-intensive processing and interact with attached hardware. Unbounded
    inputs or incorrect device configuration could exhaust CPU, GPU, memory, or
    storage resources, or interfere with other workloads sharing the host.
-6. **Network listeners:** Some applications receive sensor data over the
+6. **External dataset and model downloads:** Applications may fetch sample
+   clips, model weights, or other inputs from third-party endpoints at
+   configure or build time. For example, `applications/surgical_deidentification`
+   downloads the `endoscopy_out_of_body_detection` archive from NGC and pins a
+   SHA-256 in `cmake/DownloadData.cmake`. Overriding `SURGICAL_DEID_NGC_URL`,
+   `SURGICAL_DEID_NGC_VERSION`, or clearing `SURGICAL_DEID_NGC_SHA256` disables
+   or bypasses that pin. An unverified archive can introduce a tampered ONNX
+   model or MP4 clip that is passed to TensorRT and subsequently decoded by
+   libav*. When pointing an application at an alternate mirror or new version,
+   recompute the archive hash from a trusted source and set the matching
+   `*_SHA256` cache variable; do not ship an empty verification hash in any
+   automated or distributed build.
+7. **Network listeners:** Some applications receive sensor data over the
    network. For example, `velodyne_lidar` live mode binds UDP port 2368 on all
    interfaces (`0.0.0.0`) by default and accepts unauthenticated datagrams from
    any sender that can reach the port. The application drops datagrams that are

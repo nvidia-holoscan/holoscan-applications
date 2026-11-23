@@ -11,7 +11,7 @@ IncludeCategories:
     Priority: 2
     SortPriority: 0
     CaseSensitive: false
-  - Regex: '^<[^/]*\.h>'
+  - Regex: '^<.*\.h>'
     Priority: 1
   - Regex: '^<[^/.]*>'
     Priority: 2
