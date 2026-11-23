@@ -9,9 +9,10 @@
       }
     ],
     "language": "C++",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "changelog": {
-      "1.0.0": "Self-contained Holoscan 5.x C++ application with real and synthetic replay modes."
+      "1.0.0": "Self-contained Holoscan 5.x C++ application with real and synthetic replay modes.",
+      "1.1.0": "Add optional content-adaptive encoding policy generation (--cae policy) with InferenceToPolicyOp."
     },
     "holoscan_sdk": {
       "minimum_required_version": "5.0.0",
@@ -74,6 +75,18 @@
         },
         "run": {
           "command": "\"<holohub_app_bin>/endoscopy_tool_tracking\" --synthetic true --inference false --display false --count 10",
+          "workdir": "holohub_app_bin"
+        }
+      },
+      "cae_policy": {
+        "description": "Run tracking and generate one validated content-adaptive encoding policy map per frame.",
+        "build": {
+          "cmake_options": [
+            "-DENDOSCOPY_ENABLE_VISUALIZATION=OFF"
+          ]
+        },
+        "run": {
+          "command": "\"<holohub_app_bin>/endoscopy_tool_tracking\" --data \"<holohub_data_dir>/endoscopy\" --display false --cae policy",
           "workdir": "holohub_app_bin"
         }
       }

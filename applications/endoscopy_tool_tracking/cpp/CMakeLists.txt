@@ -24,6 +24,8 @@ elseif(DEFINED ENV{HOLOSCAN_LIB_PATH})
 endif()
 find_package(holoscan 5.0 REQUIRED CONFIG COMPONENTS core sensor_io)
 find_package(CUDAToolkit REQUIRED)
+# zlib compresses the PNG views in CAE policy dumps.
+find_package(ZLIB REQUIRED)
 if(ENDOSCOPY_ENABLE_VISUALIZATION)
   find_package(holoscan 5.0 REQUIRED CONFIG COMPONENTS visualization)
 endif()
@@ -35,11 +37,12 @@ find_library(TENSORRT_PLUGIN_LIBRARY nvinfer_plugin REQUIRED)
 find_library(TENSORRT_ONNX_LIBRARY nvonnxparser REQUIRED)
 
 add_executable(endoscopy_tool_tracking
-  main.cpp lstm_inference_v5.cpp video_preprocessor.cu tool_tracking_postprocessor_v5.cu)
+  main.cpp lstm_inference_v5.cpp video_preprocessor.cu tool_tracking_postprocessor_v5.cu
+  inference_to_policy.cu)
 target_compile_features(endoscopy_tool_tracking PRIVATE cxx_std_20 cuda_std_20)
 target_include_directories(endoscopy_tool_tracking PRIVATE ${TENSORRT_INCLUDE_DIR})
 target_link_libraries(endoscopy_tool_tracking PRIVATE holoscan::core holoscan::sensor_io CUDA::cudart
-  ${TENSORRT_LIBRARY} ${TENSORRT_PLUGIN_LIBRARY} ${TENSORRT_ONNX_LIBRARY})
+  ZLIB::ZLIB ${TENSORRT_LIBRARY} ${TENSORRT_PLUGIN_LIBRARY} ${TENSORRT_ONNX_LIBRARY})
 target_compile_definitions(endoscopy_tool_tracking PRIVATE
   ENDOSCOPY_ENABLE_VISUALIZATION=$<BOOL:${ENDOSCOPY_ENABLE_VISUALIZATION}>)
 if(ENDOSCOPY_ENABLE_VISUALIZATION)
