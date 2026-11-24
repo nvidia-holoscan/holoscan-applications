@@ -21,4 +21,5 @@ if(HOLOHUB_BUILD_CPP)
   add_subdirectory(cpp)
 endif()
 
-install(FILES README.md make_pcap.py vlp_inspect.py DESTINATION share/velodyne_lidar)
+install(FILES README.md make_pcap.py vlp_inspect.py "${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE"
+        DESTINATION share/velodyne_lidar)
