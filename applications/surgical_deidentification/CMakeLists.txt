@@ -39,4 +39,5 @@ if(BUILD_TESTING AND NOT HOLOHUB_BUILD_CPP)
     endif()
 endif()
 
-install(FILES README.md LICENSE DESTINATION share/surgical_deidentification)
+install(FILES README.md "${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE"
+        DESTINATION share/surgical_deidentification)

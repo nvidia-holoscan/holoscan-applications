@@ -23,4 +23,5 @@ if(HOLOHUB_BUILD_CPP)
   add_subdirectory(cpp)
 endif()
 
-install(FILES README.md prepare_data.py LICENSE DESTINATION share/endoscopy_tool_tracking)
+install(FILES README.md prepare_data.py "${CMAKE_CURRENT_SOURCE_DIR}/../../LICENSE"
+        DESTINATION share/endoscopy_tool_tracking)
